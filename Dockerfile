@@ -26,6 +26,17 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
+# spotdl 4.5.2 hardcodes a German-locale YTMusic client; ytmusicapi 1.12.2's
+# "de" parsing currently returns ZERO results for every search, so all Spotify
+# matching silently degrades to plain-YouTube fallback (worse matches).
+# Empirically: language="de" -> 0 results, language="en" -> 60 results for the
+# same query from the same IP. Patch to "en"; the grep makes the build fail
+# loudly if a spotdl upgrade changes this line so we can re-evaluate.
+RUN sed -i 's/YTMusic(language="de")/YTMusic(language="en")/' \
+        /usr/local/lib/python3.12/site-packages/spotdl/providers/audio/ytmusic.py \
+    && grep -q 'YTMusic(language="en")' \
+        /usr/local/lib/python3.12/site-packages/spotdl/providers/audio/ytmusic.py
+
 COPY app /srv/app
 
 # Non-root; HOME lives on the /data volume so spotdl/yt-dlp caches persist.

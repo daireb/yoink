@@ -65,6 +65,10 @@ rip. That trade is what keeps this tool free of account logins and ban risk.
 - spotdl exits 0 even when tracks fail, so job status is judged by files
   actually produced (`done_with_errors` = some tracks missing; the log names
   the failures).
+- The image patches spotdl's YouTube Music client from German to English
+  locale — ytmusicapi's "de" parsing currently returns zero results, which
+  silently degrades every match to plain-YouTube fallback. The build fails
+  loudly if a spotdl upgrade moves that line (see Dockerfile).
 - yt-dlp needs a JS runtime for YouTube's player challenges — the image ships
   deno. If YouTube downloads start failing months from now, rebuild the image
   to pick up a fresh yt-dlp: `docker compose build --no-cache && docker compose up -d`.
