@@ -1,0 +1,42 @@
+# Reprise — self-hosted Spotify/YouTube download portal.
+#
+# Quick start:   docker compose up -d --build   ->  http://localhost:8080
+#
+# Sandboxing mirrors the usual untrusted-tool posture: non-root, no
+# capabilities, read-only rootfs, loopback-only port. For a NAS deployment
+# change the port binding to "8080:8080" and set REPRISE_PASSWORD.
+
+services:
+  reprise:
+    build: .
+    image: reprise:latest
+    container_name: reprise
+    restart: unless-stopped
+
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 1024
+
+    environment:
+      # Optional password for the web UI. Leave unset for open access
+      # (fine while the port is loopback-only or behind Tailscale/CF Access).
+      REPRISE_PASSWORD: ${REPRISE_PASSWORD:-}
+      # Parallel downloads within a spotdl job.
+      REPRISE_THREADS: "4"
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      # Where finished audio lands (also downloadable through the UI).
+      - ${REPRISE_DOWNLOADS:-./downloads}:/downloads
+      # Job database, logs, tool caches.
+      - reprise-data:/data
+
+    tmpfs:
+      - /tmp:mode=1777,size=512m
+
+volumes:
+  reprise-data:
