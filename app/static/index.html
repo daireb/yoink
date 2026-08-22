@@ -546,7 +546,13 @@ function createCard(id) {
         <button class="ibtn danger" data-act="remove" title="Remove" aria-label="Remove" hidden>${icon('i-trash')}</button>
       </div>
     </div>`;
-  el.querySelector('img.cover').addEventListener('error', e => { e.target.hidden = true; });
+  // a failed image must reveal the glyph again in the same beat, or the tile
+  // goes blank until something else forces a re-render
+  el.querySelector('img.cover').addEventListener('error', e => {
+    e.target.hidden = true;
+    e.target.removeAttribute('src');          // let the next poll retry it
+    const g = el.querySelector('.src-glyph'); if (g) g.style.visibility = '';
+  });
   return el;
 }
 
