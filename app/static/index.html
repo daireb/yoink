@@ -72,8 +72,17 @@
   .jobs { margin-top: 24px; }
   .job { padding: 0; margin-bottom: 12px; display: flex; align-items: stretch; overflow: hidden; transition: border-color .15s; }
   .job:hover { border-color: #363c52; }
-  .cover { width: 112px; flex-shrink: 0; align-self: stretch; background: var(--panel2); object-fit: cover; display: grid; place-items: center; color: var(--dim); border-right: 1px solid var(--line); }
-  .cover svg.i { width: 26px; height: 26px; }
+  .coverwrap { width: 112px; flex-shrink: 0; align-self: stretch; position: relative; background: var(--panel2); border-right: 1px solid var(--line); display: grid; place-items: center; color: var(--dim); }
+  .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .coverwrap > svg.i { width: 26px; height: 26px; }
+  .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
+          background: rgba(15,17,23,.62); color: #fff; border: 1px solid rgba(255,255,255,.25); opacity: .55; transition: opacity .15s, transform .15s; backdrop-filter: blur(3px); }
+  .play svg.i { width: 18px; height: 18px; }
+  .coverwrap:hover .play, .play.on { opacity: 1; transform: scale(1.06); }
+  .file .fplay { background: none; border: 0; color: var(--dim); padding: 0 6px 0 0; display: inline-flex; cursor: pointer; }
+  .file .fplay:hover, .file .fplay.on { color: var(--accent); filter: none; }
+  .file .fplay svg.i { width: 16px; height: 16px; }
+  .file .name { display: flex; align-items: center; min-width: 0; }
   .body { flex: 1; min-width: 0; padding: 16px; }
   .job-head { display: flex; align-items: flex-start; gap: 10px; }
   .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; line-height: 1.35; }
@@ -88,7 +97,7 @@
   .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
   .actions .spacer { flex: 1; }
   .actions .ibtn:last-child { margin-right: -7px; }
-  @media (max-width: 480px) { .cover { width: 84px; } .body { padding: 14px; } }
+  @media (max-width: 480px) { .coverwrap { width: 84px; } .body { padding: 14px; } .play { opacity: .8; } }
   .missing { margin-top: 10px; font-size: 13.5px; }
   .missing ul { margin: 6px 0 0 18px; color: var(--dim); }
 
@@ -135,6 +144,8 @@
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h5M10 17h5"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor" stroke="none"/></symbol>
 </svg>
 
 <div class="overlay" id="login"><div class="card sheet" style="width:min(340px,100%)">
@@ -385,10 +396,11 @@ function card(j, d) {
   const remove = !active ? `<button class="ibtn danger" title="Remove" aria-label="Remove" onclick="act('${j.id}','DELETE','', 'Remove this download and its files?')">${icon('i-trash')}</button>` : '';
   const missing = (j.status === 'done_with_errors' && j.missing.length)
     ? `<div class="missing">Couldn't find:<ul>${j.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>` : '';
-  const cover = j.cover
-    ? `<img class="cover" src="${esc(j.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(coverFallback('${srcIcon}'))">`
-    : `<div class="cover">${icon(srcIcon)}</div>`;
-  return `<div class="card job">${cover}<div class="body">
+  const art = j.cover ? `<img class="cover" src="${esc(j.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+  const src = j.first_file ? fileUrl(j.id, j.first_file) : null;
+  const playing = src && player.src.endsWith(src.replace(/^\//, '')) && !player.paused;
+  const play = ready && src ? `<button class="play ${playing ? 'on' : ''}" data-play="${esc(src)}" title="${playing ? 'Pause' : 'Preview'}" aria-label="Preview" onclick="toggle('${j.id}',${JSON.stringify(j.first_file).replace(/"/g, '&quot;')})">${icon(playing ? 'i-pause' : 'i-play')}</button>` : '';
+  return `<div class="card job"><div class="coverwrap">${icon(srcIcon)}${art}${play}</div><div class="body">
     <div class="job-head"><div class="job-title">${esc(j.title)}</div>${
       /^https?:\/\//.test(j.input || '')
         ? `<a class="src" href="${esc(j.input)}" target="_blank" rel="noopener" title="Open on ${j.kind === 'spotify' ? 'Spotify' : /youtu\.?be/.test(j.input) ? 'YouTube' : 'the source site'}">${icon(srcIcon)}</a>`
@@ -400,11 +412,32 @@ function card(j, d) {
     </div>
   </div></div>`;
 }
-function coverFallback(iconId) { const d = document.createElement('div'); d.className = 'cover'; d.innerHTML = icon(iconId); return d; }
+// ---- preview player: one hidden <audio>, play/pause only ---------------------
+const player = new Audio();
+player.preload = 'none';
+const fileUrl = (id, name) => `/api/jobs/${id}/files/${encodeURIComponent(name)}`;
+function toggle(id, name) {
+  const url = fileUrl(id, name);
+  if (player.src.endsWith(url.replace(/^\//, '')) && !player.paused) player.pause();
+  else { player.src = url; player.play().catch(() => {}); }
+  paintPlayState();
+}
+player.addEventListener('play', paintPlayState);
+player.addEventListener('pause', paintPlayState);
+player.addEventListener('ended', paintPlayState);
+function paintPlayState() {
+  const cur = player.src && !player.paused ? decodeURIComponent(new URL(player.src).pathname) : null;
+  document.querySelectorAll('[data-play]').forEach(b => {
+    const on = cur && decodeURIComponent(b.dataset.play) === cur;
+    b.classList.toggle('on', !!on);
+    b.innerHTML = icon(on ? 'i-pause' : 'i-play');
+    if (b.classList.contains('play')) b.title = on ? 'Pause' : 'Preview';
+  });
+}
 
 // ---- details modal --------------------------------------------------------------
 async function openDetails(id) { detailsId = id; $('details').classList.add('show'); await renderDetails(); }
-function closeDetails() { detailsId = null; $('details').classList.remove('show'); }
+function closeDetails() { detailsId = null; $('details').classList.remove('show'); player.pause(); }
 async function renderDetails() {
   if (!detailsId) return;
   let d; try { d = await (await api('/api/jobs/' + detailsId)).json(); } catch { return; }
@@ -420,7 +453,8 @@ async function renderDetails() {
     <dt>Requested at</dt><dd>${new Date(d.created * 1000).toLocaleString()}</dd>
     ${d.finished ? `<dt>${({ cancelled: 'Cancelled at', error: 'Failed at', interrupted: 'Interrupted at' })[d.status] || 'Completed at'}</dt><dd>${new Date(d.finished * 1000).toLocaleString()}</dd>` : ''}
     ${d.keep_until ? `<dt>Kept until</dt><dd>${new Date(d.keep_until * 1000).toLocaleString()}</dd>` : ''}`;
-  $('dFiles').innerHTML = d.files.map(f => `<div class="file"><a href="/api/jobs/${d.id}/files/${encodeURIComponent(f.name)}">${esc(f.name)}</a><span>${mb(f.size)}</span></div>`).join('');
+  $('dFiles').innerHTML = d.files.map(f => `<div class="file"><span class="name"><button class="fplay" data-play="${esc(fileUrl(d.id, f.name))}" aria-label="Preview" onclick='toggle("${d.id}",${JSON.stringify(f.name)})'>${icon('i-play')}</button><a href="${fileUrl(d.id, f.name)}">${esc(f.name)}</a></span><span>${mb(f.size)}</span></div>`).join('');
+  paintPlayState();
   $('dLog').textContent = d.log || '(no output yet)';
 }
 

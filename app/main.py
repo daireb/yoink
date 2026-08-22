@@ -891,6 +891,7 @@ def public_job(r: sqlite3.Row, with_files: bool = False) -> dict:
     job_dir = Path(r["dir"])
     files = list_audio_files(job_dir) if r["status"] != "queued" else []
     d["files_count"] = len(files)
+    d["first_file"] = files[0].name if files else None  # for the preview button
     d["size_bytes"] = sum(f.stat().st_size for f in files)
     d["missing"] = [(f"{', '.join(t['artists'])} - {t['name']}" if t.get("artists") else t["name"])
                     for t in json.loads(r["missing"])] if r["missing"] else []
@@ -1004,12 +1005,42 @@ def safe_file(job_dir: Path, name: str) -> Path:
 
 
 @app.get("/api/jobs/{job_id}/files/{name:path}")
-def download_file(job_id: str, name: str):
+def download_file(job_id: str, name: str, request: Request):
     row = job_row(job_id)
     if not row:
         raise HTTPException(404, "no such job")
     p = safe_file(Path(row["dir"]), name)
-    return FileResponse(p, filename=p.name)
+    size = p.stat().st_size
+    media_type = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".opus": "audio/ogg",
+                  ".ogg": "audio/ogg", ".flac": "audio/flac", ".wav": "audio/wav"}.get(p.suffix.lower(), "application/octet-stream")
+    rng = request.headers.get("range")
+    m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng or "")
+    if not m:
+        return FileResponse(p, media_type=media_type, filename=p.name, headers={"Accept-Ranges": "bytes"})
+    # byte ranges: needed for seeking, and iOS Safari won't play audio without them
+    start = int(m.group(1)) if m.group(1) else max(0, size - int(m.group(2) or 0))
+    end = int(m.group(2)) if m.group(1) and m.group(2) else size - 1
+    end = min(end, size - 1)
+    if start > end or start >= size:
+        raise HTTPException(416, "range not satisfiable", headers={"Content-Range": f"bytes */{size}"})
+
+    def chunks(path=p, pos=start, remaining=end - start + 1):
+        with open(path, "rb") as fh:
+            fh.seek(pos)
+            while remaining > 0:
+                buf = fh.read(min(1 << 16, remaining))
+                if not buf:
+                    break
+                remaining -= len(buf)
+                yield buf
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(chunks(), status_code=206, media_type=media_type, headers={
+        "Content-Range": f"bytes {start}-{end}/{size}",
+        "Content-Length": str(end - start + 1),
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": f'inline; filename="{p.name}"',
+    })
 
 
 @app.get("/api/jobs/{job_id}/zip")
