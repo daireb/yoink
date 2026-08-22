@@ -27,9 +27,19 @@ Open **http://localhost:8080**.
 | YouTube video / playlist URL (and most media sites) | yt-dlp | |
 | Free text ("artist song") | spotdl | resolved via Spotify search |
 
-Formats: MP3 320k (default), or M4A / Opus / FLAC at source quality.
+Paste a link → it looks the link up → for anything more than one song you get
+a confirm sheet (name, count, size) → Request. Playlists come back numbered
+`01 - Artist - Title.mp3` so simple players (swim headphones, car USB) keep the
+order, with an `.m3u8` alongside. Tracks that couldn't be found are listed with
+a **Retry missing** button that fetches only those.
+
+Defaults (quality 320/192/128 kbps, format MP3 / M4A / Opus / FLAC, numbering)
+live behind the gear icon and are saved in your browser.
+
 Files land in `./downloads/<job>/` (configurable via `REPRISE_DOWNLOADS` in
-`.env`) and are also downloadable through the UI, individually or as a zip.
+`.env`) and are downloadable through the UI — one click for the whole batch,
+or per file from the details view. Everything is kept for `REPRISE_KEEP_DAYS`
+(default 7) and then removed.
 
 ## Configuration (.env or environment)
 
@@ -38,6 +48,7 @@ Files land in `./downloads/<job>/` (configurable via `REPRISE_DOWNLOADS` in
 | `REPRISE_DOWNLOADS` | `./downloads` | host folder where audio lands |
 | `REPRISE_PASSWORD` | *(unset = no auth)* | password for the web UI |
 | `REPRISE_THREADS` | `4` | parallel downloads within a job |
+| `REPRISE_KEEP_DAYS` | `7` | how long finished downloads are kept |
 | `REPRISE_SECRET` | auto-generated, persisted in `/data` | cookie-signing secret override |
 
 ## Exposing it (NAS / Cloudflare)
@@ -89,6 +100,6 @@ actual heavy lifting.
   worker is healthy (the worker auto-restarts on errors, so this is cosmetic).
 - No retention policy: jobs, logs, and audio accumulate until you remove them
   (by design — they're your files).
-- The login throttle is a global progressive delay, not per-IP; real
-  brute-force protection should come from Cloudflare Access / Tailscale when
-  the port is opened.
+- The login throttle is a global progressive delay, not per-IP, and sessions
+  are only revoked by changing the password; real brute-force protection should
+  come from Cloudflare Access / Tailscale when the port is opened.

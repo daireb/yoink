@@ -216,30 +216,44 @@ def parse_spotdl_file(path: Path, order_hint: Optional[list[str]] = None) -> lis
         "id": s.get("song_id") or "",
         "list_name": s.get("list_name"),
         "pos": s.get("list_position"),
+        "_disc": s.get("disc_number") or 0,
+        "_track": s.get("track_number") or 0,
     } for s in songs]
-    if tracks and all(t["pos"] for t in tracks):
-        tracks.sort(key=lambda t: t["pos"])
+    if tracks and any(t["pos"] for t in tracks):
+        tracks.sort(key=lambda t: (t["pos"] is None, t["pos"] or 0))
+    elif tracks and any(t["_track"] for t in tracks):
+        tracks.sort(key=lambda t: (t["_disc"], t["_track"]))  # albums
     elif order_hint:
         rank = {h: i for i, h in enumerate(order_hint)}
         tracks.sort(key=lambda t: min(rank.get(t["id"], 1e9), rank.get(t["url"], 1e9)))
     for i, t in enumerate(tracks, 1):
         t["pos"] = i
+        t.pop("_disc", None)
+        t.pop("_track", None)
     return tracks
 
 
 def match_files(expected: list[dict], files: list[Path]) -> tuple[dict[int, Path], list[dict]]:
     """Map expected track -> produced file. Returns (pos->file, missing)."""
-    by_key: dict[str, Path] = {}
+    by_key: dict[str, list[Path]] = {}
     for f in files:
-        by_key.setdefault(file_key(f), f)
+        by_key.setdefault(file_key(f), []).append(f)
     matched: dict[int, Path] = {}
     used: set[Path] = set()
     unmatched_exp = []
+    seen_keys: set[str] = set()
     for t in expected:
-        f = by_key.get(expected_key(t))
-        if f is not None and f not in used:
+        k = expected_key(t)
+        pool = by_key.get(k) or []
+        if pool:
+            f = pool.pop(0)
             matched[t["pos"]] = f
             used.add(f)
+            seen_keys.add(k)
+        elif k in seen_keys:
+            # same title appears twice in the list; spotdl writes one file for
+            # both, so the second is a duplicate rather than a failure
+            continue
         else:
             unmatched_exp.append(t)
     # fuzzy second pass for the leftovers (sanitized chars, slight title drift)
@@ -273,7 +287,9 @@ def finalize_job_dir(job_id: str, expected: list[dict], numbered: bool, job_dir:
         if f is None:
             continue
         base = NUM_PREFIX_RE.sub("", f.name)
-        want = f.with_name(f"{t['pos']:0{width}d} - {base}" if numbered else base)
+        # number by position among the files that exist, so gaps (duplicates,
+        # missing tracks) don't leave holes in the sequence
+        want = f.with_name(f"{len(ordered) + 1:0{width}d} - {base}" if numbered else base)
         if want != f and not want.exists():
             f.rename(want)
             f = want
@@ -397,6 +413,12 @@ def run_job(row: sqlite3.Row) -> None:
     state = {"done": 0, "total": row["total"]}
     expected = json.loads(row["expected"]) if row["expected"] else []
     log_path = LOG_DIR / f"{job_id}.log"
+    if row["parent_id"] and job_row(row["parent_id"]) is None:
+        with db() as conn:
+            conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        with RUNNING_LOCK:
+            RUNNING.pop(job_id, None)
+        return
 
     def progress():
         update_job(job_id, done=state.get("done", 0), total=state.get("total"))
@@ -439,6 +461,8 @@ def run_job(row: sqlite3.Row) -> None:
                     update_job(job_id, title=title, total=len(expected), expected=json.dumps(expected))
                     state["total"] = len(expected)
 
+            if handle.cancelled:
+                raise _Stop()
             # ---- step 2: download -----------------------------------------
             update_job(job_id, step="downloading")
             if kind == "media":
@@ -614,6 +638,8 @@ def authed(request: Request) -> bool:
 # ------------------------------------------------------------------------- app
 
 app = FastAPI(title="Reprise")
+PREFLIGHT_SLOTS = asyncio.Semaphore(2)
+LOGIN_LOCK = asyncio.Lock()
 
 
 @app.middleware("http")
@@ -637,10 +663,11 @@ async def login(request: Request, response: Response):
     now = time.time()
     _login_failures[:] = [t for t in _login_failures if now - t < 300]
     body = await request.json()
-    if not hmac.compare_digest(str(body.get("password", "")), PASSWORD):
-        _login_failures.append(now)
-        await asyncio.sleep(min(len(_login_failures), 5))
-        raise HTTPException(403, "wrong password")
+    async with LOGIN_LOCK:  # serialized, so the delay can't be parallelised away
+        if not hmac.compare_digest(str(body.get("password", "")), PASSWORD):
+            _login_failures.append(now)
+            await asyncio.sleep(min(len(_login_failures), 5))
+            raise HTTPException(403, "wrong password")
     response.set_cookie(COOKIE, session_token(), httponly=True, samesite="lax",
                         max_age=60 * 60 * 24 * 30)
     return {"ok": True}
@@ -650,6 +677,24 @@ async def login(request: Request, response: Response):
 def logout(response: Response):
     response.delete_cookie(COOKIE)
     return {"ok": True}
+
+
+def assert_public_url(url: str) -> None:
+    """yt-dlp will fetch anything; don't let a link point it at the LAN."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    if not host:
+        raise HTTPException(400, "bad link")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        raise HTTPException(400, "that host doesn't resolve")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise HTTPException(400, "links to private/internal addresses aren't allowed")
 
 
 def detect_kind(text: str) -> str:
@@ -691,11 +736,19 @@ def est_mb(tracks: list[dict], bitrate: int) -> float:
 @app.post("/api/preflight")
 async def preflight(request: Request):
     """Look up what a link points at — name, track count, size — before committing."""
+    if PREFLIGHT_SLOTS.locked():
+        raise HTTPException(429, "busy looking things up — try again in a moment")
+    async with PREFLIGHT_SLOTS:
+        return await _preflight(request)
+
+
+async def _preflight(request: Request):
     body = await request.json()
     text = clean_input(str(body.get("input", "")))
     fmt, bitrate, _ = parse_options(body)
     kind = detect_kind(text)
     if kind == "media":
+        await asyncio.to_thread(assert_public_url, text)
         try:
             info = await asyncio.to_thread(probe_media, text)
         except Exception as exc:  # noqa: BLE001
@@ -734,6 +787,8 @@ async def submit(request: Request):
     text = clean_input(str(body.get("input", "")))
     fmt, bitrate, numbered = parse_options(body)
     kind = detect_kind(text)
+    if kind == "media":
+        await asyncio.to_thread(assert_public_url, text)
     title = body.get("title") or (text if len(text) < 80 else text[:77] + "...")
     expected, total = None, None
     token = body.get("token")
@@ -850,17 +905,25 @@ def job_detail(job_id: str):
 
 @app.post("/api/jobs/{job_id}/cancel")
 def cancel(job_id: str):
-    with RUNNING_LOCK:
-        handle = RUNNING.get(job_id)
-    if handle and handle.proc:
-        handle.cancelled = True
-        threading.Thread(target=kill_group, args=(handle.proc,), daemon=True).start()
-        return {"ok": True}
+    with db() as conn:
+        child = conn.execute("SELECT id FROM jobs WHERE parent_id=?", (job_id,)).fetchone()
+    targets = [job_id] + ([child["id"]] if child else [])
+    for tid in targets:
+        with RUNNING_LOCK:
+            handle = RUNNING.get(tid)
+        if handle:
+            handle.cancelled = True
+            if handle.proc:
+                threading.Thread(target=kill_group, args=(handle.proc,), daemon=True).start()
+            return {"ok": True}
     with db() as conn:
         cur = conn.execute(
-            "UPDATE jobs SET status='cancelled', finished=? WHERE id=? AND status='queued'",
-            (time.time(), job_id))
-    if cur.rowcount == 1:
+            "UPDATE jobs SET status='cancelled', finished=? WHERE id IN (?, ?) AND status='queued'",
+            (time.time(), job_id, targets[-1]))
+        if cur.rowcount and child:
+            conn.execute("DELETE FROM jobs WHERE id=?", (child["id"],))
+            conn.execute("UPDATE jobs SET status='cancelled', finished=? WHERE id=?", (time.time(), job_id))
+    if cur.rowcount >= 1:
         return {"ok": True}
     raise HTTPException(409, "job is not running or queued")
 
@@ -898,6 +961,8 @@ def remove(job_id: str, files: int = 1):
     with db() as conn:
         cur = conn.execute(
             "DELETE FROM jobs WHERE id=? AND status NOT IN ('running','retrying')", (job_id,))
+        if cur.rowcount:
+            conn.execute("DELETE FROM jobs WHERE parent_id=? AND status='queued'", (job_id,))
     if cur.rowcount == 0:
         raise HTTPException(409, "stop it first")
     if files:
