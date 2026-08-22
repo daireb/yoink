@@ -1,4 +1,4 @@
-# Reprise
+# Yoink
 
 Self-hosted music download portal. Paste a Spotify or YouTube link in a web UI,
 get tagged audio files back — from any device on your network (or, behind
@@ -36,27 +36,27 @@ a **Retry missing** button that fetches only those.
 Defaults (quality 320/192/128 kbps, format MP3 / M4A / Opus / FLAC, numbering)
 live behind the gear icon and are saved in your browser.
 
-Files land in `./downloads/<job>/` (configurable via `REPRISE_DOWNLOADS` in
+Files land in `./downloads/<job>/` (configurable via `YOINK_DOWNLOADS` in
 `.env`) and are downloadable through the UI — one click for the whole batch,
-or per file from the details view. Everything is kept for `REPRISE_KEEP_DAYS`
+or per file from the details view. Everything is kept for `YOINK_KEEP_DAYS`
 (default 7) and then removed.
 
 ## Configuration (.env or environment)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `REPRISE_DOWNLOADS` | `./downloads` | host folder where audio lands |
-| `REPRISE_PASSWORD` | *(unset = no auth)* | password for the web UI |
-| `REPRISE_THREADS` | `4` | parallel downloads within a job |
-| `REPRISE_KEEP_DAYS` | `7` | how long finished downloads are kept |
-| `REPRISE_SECRET` | auto-generated, persisted in `/data` | cookie-signing secret override |
+| `YOINK_DOWNLOADS` | `./downloads` | host folder where audio lands |
+| `YOINK_PASSWORD` | *(unset = no auth)* | password for the web UI |
+| `YOINK_THREADS` | `4` | parallel downloads within a job |
+| `YOINK_KEEP_DAYS` | `7` | how long finished downloads are kept |
+| `YOINK_SECRET` | auto-generated, persisted in `/data` | cookie-signing secret override |
 
 ## Exposing it (NAS / Cloudflare)
 
 The compose file binds to `127.0.0.1` only. To serve your LAN or the world:
 
 1. Change the port mapping to `"8080:8080"`.
-2. Set `REPRISE_PASSWORD`.
+2. Set `YOINK_PASSWORD`.
 3. Put Cloudflare Tunnel + Access (or Tailscale) in front. Don't port-forward raw.
 
 The container is sandboxed regardless: non-root, all capabilities dropped,

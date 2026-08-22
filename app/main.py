@@ -1,4 +1,4 @@
-"""Reprise — self-hosted music download portal.
+"""Yoink — self-hosted music download portal.
 
 FastAPI app wrapping spotDL (Spotify -> YouTube Music match -> audio) and
 yt-dlp (YouTube and most other media sites). Jobs run in a single background
@@ -41,13 +41,13 @@ from starlette.background import BackgroundTask
 
 # ---------------------------------------------------------------- configuration
 
-DOWNLOAD_DIR = Path(os.environ.get("REPRISE_DOWNLOAD_DIR", "/downloads"))
-DATA_DIR = Path(os.environ.get("REPRISE_DATA_DIR", "/data"))
-PASSWORD = os.environ.get("REPRISE_PASSWORD", "").strip()
-SPOTDL_THREADS = os.environ.get("REPRISE_THREADS", "4")
-KEEP_DAYS = float(os.environ.get("REPRISE_KEEP_DAYS", "7"))
+DOWNLOAD_DIR = Path(os.environ.get("YOINK_DOWNLOAD_DIR", "/downloads"))
+DATA_DIR = Path(os.environ.get("YOINK_DATA_DIR", "/data"))
+PASSWORD = os.environ.get("YOINK_PASSWORD", "").strip()
+SPOTDL_THREADS = os.environ.get("YOINK_THREADS", "4")
+KEEP_DAYS = float(os.environ.get("YOINK_KEEP_DAYS", "7"))
 # kill a job step if its process produces no output for this long (seconds)
-STALL_TIMEOUT = int(os.environ.get("REPRISE_STALL_TIMEOUT", "1800"))
+STALL_TIMEOUT = int(os.environ.get("YOINK_STALL_TIMEOUT", "1800"))
 MAX_CSV_ROWS = 1000
 MAX_CSV_BYTES = 5 * 1024 * 1024
 AUDIO_EXTS = {".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"}
@@ -56,7 +56,7 @@ BITRATES = (320, 192, 128)
 
 LOG_DIR = DATA_DIR / "logs"
 PREFLIGHT_DIR = DATA_DIR / "preflight"
-DB_PATH = DATA_DIR / "reprise.db"
+DB_PATH = DATA_DIR / "yoink.db"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\r")
 NUM_PREFIX_RE = re.compile(r"^\d{2,3} - ")
@@ -65,7 +65,7 @@ SPOTDL_FLAGS = ["--simple-tui", "--log-level", "INFO", "--headless"]
 
 def _load_secret() -> str:
     """Cookie-signing secret: env override, else generated once into /data."""
-    if env := os.environ.get("REPRISE_SECRET", ""):
+    if env := os.environ.get("YOINK_SECRET", ""):
         return env
     path = DATA_DIR / "secret"
     try:
@@ -640,12 +640,12 @@ def retention_loop() -> None:
 
 # ------------------------------------------------------------------------ auth
 
-COOKIE = "reprise_session"
+COOKIE = "yoink_session"
 _login_failures: list[float] = []
 
 
 def session_token() -> str:
-    return hmac.new(SECRET.encode(), b"reprise-auth-v1:" + PASSWORD.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(SECRET.encode(), b"yoink-auth-v1:" + PASSWORD.encode(), hashlib.sha256).hexdigest()
 
 
 def authed(request: Request) -> bool:
@@ -656,7 +656,7 @@ def authed(request: Request) -> bool:
 
 # ------------------------------------------------------------------------- app
 
-app = FastAPI(title="Reprise")
+app = FastAPI(title="Yoink")
 PREFLIGHT_SLOTS = asyncio.Semaphore(2)
 LOGIN_LOCK = asyncio.Lock()
 
@@ -999,7 +999,7 @@ def started_cookie(resp, t: Optional[str]):
     """Download-started handshake: the page polls for this cookie to know the
     browser has begun receiving the file (used to end the 'Preparing…' state)."""
     if t and re.fullmatch(r"[a-z0-9]{8,32}", t):
-        resp.set_cookie("reprise_dl", t, max_age=60, samesite="lax", path="/")
+        resp.set_cookie("yoink_dl", t, max_age=60, samesite="lax", path="/")
     return resp
 
 
@@ -1098,5 +1098,5 @@ init_db()
 if not os.access(DOWNLOAD_DIR, os.W_OK):
     print(f"WARNING: {DOWNLOAD_DIR} is not writable by uid {os.getuid()}. On a NAS, chown the "
           "mounted downloads folder to uid 10001. Downloads WILL fail until fixed.", flush=True)
-threading.Thread(target=worker_loop, daemon=True, name="reprise-worker").start()
-threading.Thread(target=retention_loop, daemon=True, name="reprise-retention").start()
+threading.Thread(target=worker_loop, daemon=True, name="yoink-worker").start()
+threading.Thread(target=retention_loop, daemon=True, name="yoink-retention").start()

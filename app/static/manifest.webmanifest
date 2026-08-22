@@ -1,6 +1,6 @@
 {
-  "name": "Reprise",
-  "short_name": "Reprise",
+  "name": "Yoink",
+  "short_name": "Yoink",
   "description": "Spotify & YouTube → MP3",
   "start_url": "/",
   "display": "standalone",

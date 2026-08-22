@@ -1,16 +1,16 @@
-# Reprise — self-hosted Spotify/YouTube download portal.
+# Yoink — self-hosted Spotify/YouTube download portal.
 #
 # Quick start:   docker compose up -d --build   ->  http://localhost:8080
 #
 # Sandboxing mirrors the usual untrusted-tool posture: non-root, no
 # capabilities, read-only rootfs, loopback-only port. For a NAS deployment
-# change the port binding to "8080:8080" and set REPRISE_PASSWORD.
+# change the port binding to "8080:8080" and set YOINK_PASSWORD.
 
 services:
-  reprise:
+  yoink:
     build: .
-    image: reprise:latest
-    container_name: reprise
+    image: yoink:latest
+    container_name: yoink
     restart: unless-stopped
 
     user: "10001:10001"
@@ -22,21 +22,21 @@ services:
     environment:
       # Optional password for the web UI. Leave unset for open access
       # (fine while the port is loopback-only or behind Tailscale/CF Access).
-      REPRISE_PASSWORD: ${REPRISE_PASSWORD:-}
+      YOINK_PASSWORD: ${YOINK_PASSWORD:-}
       # Parallel downloads within a spotdl job.
-      REPRISE_THREADS: "4"
+      YOINK_THREADS: "4"
 
     ports:
       - "127.0.0.1:8080:8080"
 
     volumes:
       # Where finished audio lands (also downloadable through the UI).
-      - ${REPRISE_DOWNLOADS:-./downloads}:/downloads
+      - ${YOINK_DOWNLOADS:-./downloads}:/downloads
       # Job database, logs, tool caches.
-      - reprise-data:/data
+      - yoink-data:/data
 
     tmpfs:
       - /tmp:mode=1777,size=512m
 
 volumes:
-  reprise-data:
+  yoink-data:

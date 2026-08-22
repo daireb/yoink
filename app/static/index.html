@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Reprise</title>
+<title>Yoink</title>
 <meta name="theme-color" content="#0f1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Reprise">
+<meta name="apple-mobile-web-app-title" content="Yoink">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -174,7 +174,7 @@
 </svg>
 
 <div class="overlay" id="login"><div class="card sheet" style="width:min(340px,100%)">
-  <h2>Reprise</h2>
+  <h2>Yoink</h2>
   <input type="password" id="pw" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
   <div id="loginErr"></div>
   <button onclick="doLogin()">Sign in</button>
@@ -215,7 +215,7 @@
 
 <div class="overlay" id="import"><div class="card sheet" style="width:min(460px,100%)">
   <div class="sheet-head"><h2>Import a private playlist</h2><button class="ibtn" onclick="closeImport()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
-  <div class="sub">Spotify doesn't let anyone see private playlists or your Liked Songs, so a link won't work for those. <b>Exportify</b> is a free site that signs into your Spotify and exports any playlist as a CSV file — Reprise reads that file.</div>
+  <div class="sub">Spotify doesn't let anyone see private playlists or your Liked Songs, so a link won't work for those. <b>Exportify</b> is a free site that signs into your Spotify and exports any playlist as a CSV file — Yoink reads that file.</div>
   <ol class="steps">
     <li>Open <a href="https://exportify.net" target="_blank" rel="noopener">exportify.net</a> and log in with Spotify.</li>
     <li>Click <b>Export</b> next to the playlist (or <b>Liked Songs</b>).</li>
@@ -234,7 +234,7 @@
 <div class="wrap">
   <header>
     <img src="/static/icon-header.png" alt="">
-    <h1>Reprise</h1>
+    <h1>Yoink</h1>
     <button class="ibtn" onclick="openOptions()" aria-label="Options" title="Options"><svg class="i"><use href="#i-gear"/></svg></button>
   </header>
 
@@ -264,7 +264,7 @@ const JOBS = {};           // latest job rows by id
 
 // ---- options (defaults, persisted) -------------------------------------------
 const DEFAULTS = { format: 'mp3', bitrate: 320, numbered: true };
-function loadOpts() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('reprise.opts') || '{}') }; } catch { return { ...DEFAULTS }; } }
+function loadOpts() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('yoink.opts') || '{}') }; } catch { return { ...DEFAULTS }; } }
 function opts() { return loadOpts(); }
 function openOptions() {
   const o = loadOpts();
@@ -273,7 +273,7 @@ function openOptions() {
 }
 function closeOptions() {
   const o = { format: $('format').value, bitrate: +$('bitrate').value, numbered: $('numbered').checked };
-  localStorage.setItem('reprise.opts', JSON.stringify(o));
+  localStorage.setItem('yoink.opts', JSON.stringify(o));
   $('options').classList.remove('show');
   if (pending) { Object.assign(pending, o); renderConfirmOpts(); }
 }
@@ -510,10 +510,10 @@ function startDownload(id, url) {
   document.body.appendChild(a); a.click(); a.remove();
   const t0 = Date.now();
   const poll = setInterval(() => {
-    const started = document.cookie.split(';').some(c => c.trim() === `reprise_dl=${tok}`);
+    const started = document.cookie.split(';').some(c => c.trim() === `yoink_dl=${tok}`);
     if (started || Date.now() - t0 > 120000) {
       clearInterval(poll); preparing.delete(id);
-      document.cookie = 'reprise_dl=; Max-Age=0; path=/';
+      document.cookie = 'yoink_dl=; Max-Age=0; path=/';
       refresh();
     }
   }, 150);
@@ -582,7 +582,7 @@ async function refresh() {
   $('jobs').innerHTML = data.jobs.length ? data.jobs.map(j => card(j, details[j.id])).join('')
     : `<div class="empty">Paste a Spotify or YouTube link above to get started.<br>Private playlist or Liked Songs? Use <b>Import private playlist</b>.</div>`;
   const active = data.jobs.filter(j => j.status === 'running' || j.status === 'retrying').length;
-  document.title = active ? `(${active}) Reprise` : 'Reprise';
+  document.title = active ? `(${active}) Yoink` : 'Yoink';
   $('foot').textContent = `Downloads are kept for ${data.keep_days} day${data.keep_days == 1 ? '' : 's'} · ${mb(data.disk_used)} used`;
   if (detailsId && JOBS[detailsId] && ['running', 'retrying', 'queued'].includes(JOBS[detailsId].status)) renderDetails();
 }
