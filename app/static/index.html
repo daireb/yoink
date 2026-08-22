@@ -350,6 +350,12 @@ document.addEventListener('dragenter', e => { if (e.dataTransfer?.types.includes
 document.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
 document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) uploadCsv(f); });
+// click on the backdrop closes the sheet (mousedown on the overlay itself, so a
+// drag-select that ends outside the sheet doesn't dismiss it)
+const closers = { options: closeOptions, details: closeDetails, confirm: closeConfirm };
+for (const [id, close] of Object.entries(closers)) {
+  $(id).addEventListener('mousedown', e => { if (e.target === e.currentTarget) close(); });
+}
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if ($('options').classList.contains('show')) closeOptions();
