@@ -403,6 +403,7 @@ async function renderDetails() {
     <dt>Source</dt><dd>${esc(srcLabel)}</dd>
     <dt>Format</dt><dd>${esc(d.format.toUpperCase())} · ${d.bitrate} kbps${d.numbered ? ' · numbered' : ''}</dd>
     <dt>Requested at</dt><dd>${new Date(d.created * 1000).toLocaleString()}</dd>
+    ${d.finished ? `<dt>${({ cancelled: 'Cancelled at', error: 'Failed at', interrupted: 'Interrupted at' })[d.status] || 'Completed at'}</dt><dd>${new Date(d.finished * 1000).toLocaleString()}</dd>` : ''}
     ${d.keep_until ? `<dt>Kept until</dt><dd>${new Date(d.keep_until * 1000).toLocaleString()}</dd>` : ''}`;
   $('dFiles').innerHTML = d.files.map(f => `<div class="file"><a href="/api/jobs/${d.id}/files/${encodeURIComponent(f.name)}">${esc(f.name)}</a><span>${mb(f.size)}</span></div>`).join('');
   $('dLog').textContent = d.log || '(no output yet)';
