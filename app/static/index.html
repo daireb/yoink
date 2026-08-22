@@ -12,11 +12,9 @@
 <link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <style>
-  @font-face { font-family: "Instrument Serif"; src: url("/static/fonts/InstrumentSerif-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
   @font-face { font-family: "IBM Plex Mono"; src: url("/static/fonts/IBMPlexMono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
   @font-face { font-family: "IBM Plex Mono"; src: url("/static/fonts/IBMPlexMono-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
   :root {
-    --serif: "Instrument Serif", Georgia, "Times New Roman", serif;
     --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --bg: #0f1117; --panel: #171a23; --panel2: #1e2230; --line: #2a2f40;
     --text: #e6e9f2; --dim: #8b91a7; --accent: #7c8cff; --accent2: #5865f2;
@@ -49,7 +47,7 @@
   .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
   header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
   header img { width: 32px; height: 32px; }
-  header h1 { font-family: var(--serif); font-weight: 400; font-size: 30px; letter-spacing: -0.01em; flex: 1; line-height: 1; transform: translateY(1px); }
+  header h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.4px; flex: 1; }
   header .ibtn { margin-right: -7px; }   /* glyph, not hit-box, sits on the column edge */
 
   svg.i { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; display: block; }
