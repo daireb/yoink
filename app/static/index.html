@@ -57,8 +57,13 @@
 
   .card { background: linear-gradient(180deg, #181b25, #151822); border: 1px solid rgba(42,47,64,.85); border-radius: var(--radius); }
   .job.enter { animation: rise .32s cubic-bezier(.2,.7,.2,1) both; }
+  .job.leave { animation: fall .22s ease-in both; pointer-events: none; }
+  @keyframes fall { to { opacity: 0; transform: translateY(4px) scale(.985); } }
+  .state { transition: color .35s ease; }
+  .bar i { transition: width .6s cubic-bezier(.2,.7,.2,1); }
+  [hidden] { display: none !important; }
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
-  @media (prefers-reduced-motion: reduce) { .job.enter { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .job.enter, .job.leave { animation: none; } .bar i, .state { transition: none; } }
 
   .field { position: relative; }
   .field input {
@@ -420,78 +425,6 @@ document.addEventListener('keydown', e => {
   else if (pending) closeConfirm();
 });
 
-// ---- job cards -----------------------------------------------------------------
-async function act(id, method, path, confirmMsg) {
-  if (confirmMsg && !confirm(confirmMsg)) return;
-  try { const r = await api(`/api/jobs/${id}${path}`, { method }); if (!r.ok) alert(await detailOf(r)); } catch {}
-  refresh();
-}
-async function tryAgain(id) {
-  const j = JOBS[id]; if (!j) return;
-  try { const r = await api(`/api/jobs/${id}/retry`, { method: 'POST' }); if (r.ok) { refresh(); return; } } catch (e) { if (e.message === 'auth') return; }
-  if (!j.input) return;
-  try {
-    await api('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ input: j.input, format: j.format, bitrate: j.bitrate, numbered: !!j.numbered }) });
-    await api(`/api/jobs/${id}`, { method: 'DELETE' });
-  } catch {}
-  refresh();
-}
-
-function stateLine(j) {
-  const multi = (j.total || 0) > 1;
-  switch (j.status) {
-    case 'queued': return ['', 'Waiting…'];
-    case 'running':
-      if (j.step === 'resolving') return ['', `${spin()}Looking up tracks…`];
-      if (j.step === 'finishing') return ['', `${spin()}Finishing up…`];
-      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : 'Downloading…'];
-    case 'retrying': return ['', `${spin()}Retrying the missing ones…`];
-    case 'done': return ['ok', `Ready${multi ? ' · ' + plural(j.files_count, 'song') : ''} · ${mb(j.size_bytes)}`];
-    case 'done_with_errors': return ['warn', `Ready · ${plural(j.files_count, 'song')} · <b>${plural(j.missing.length, 'song')} couldn't be found</b>`];
-    case 'cancelled': return ['', 'Cancelled'];
-    case 'interrupted': return ['bad', 'Interrupted — the server restarted'];
-    default: return ['bad', `Couldn't download — ${esc(j.error || 'unknown error')}`];
-  }
-}
-
-function card(j, d) {
-  const active = ['running', 'queued', 'retrying'].includes(j.status);
-  const ready = j.status === 'done' || j.status === 'done_with_errors';
-  const multi = (j.total || 0) > 1 || j.files_count > 1;
-  const [cls, line] = stateLine(j);
-  const pct = j.total ? Math.min(100, Math.round(100 * j.done / j.total)) : null;
-  const bar = (j.status === 'running' && j.step === 'downloading') ? `<div class="bar ${pct === null ? 'indet' : ''}"><i style="width:${pct ?? 30}%"></i></div>` : '';
-  const [srcIcon, srcLabel] = SRC[j.kind] || ['i-search', j.kind];
-  let primary = '';
-  if (ready) {
-    const url = (!multi && d && d.files.length === 1) ? fileUrl(j.id, d.files[0].name) : `/api/jobs/${j.id}/zip`;
-    primary = preparing.has(j.id)
-      ? `<button disabled class="preparing">${spin()}Preparing…</button>`
-      : `<button onclick="startDownload('${j.id}', ${JSON.stringify(url).replace(/"/g, '&quot;')})">Download</button>`;
-  }
-  const retry = j.status === 'done_with_errors' ? `<button class="ghost" onclick="act('${j.id}','POST','/retry')">Retry missing</button>` : '';
-  const again = ['error', 'interrupted', 'cancelled'].includes(j.status) ? `<button class="ghost" onclick="tryAgain('${j.id}')">Try again</button>` : '';
-  const cancel = active ? `<button class="ghost" onclick="act('${j.id}','POST','/cancel')">Cancel</button>` : '';
-  const remove = !active ? `<button class="ibtn danger" title="Remove" aria-label="Remove" onclick="act('${j.id}','DELETE','', 'Remove this download and its files?')">${icon('i-trash')}</button>` : '';
-  const missing = (j.status === 'done_with_errors' && j.missing.length)
-    ? `<div class="missing">Couldn't find:<ul>${j.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>` : '';
-  const art = j.cover ? `<img class="cover" src="${esc(j.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
-  const playing = jobPlaying(j.id);
-  const play = ready && j.first_file ? `<button class="play ${playing ? 'on' : ''}" data-job="${j.id}" title="${playing ? 'Pause' : 'Preview'}" aria-label="Preview" onclick="toggleJob('${j.id}',${JSON.stringify(j.first_file).replace(/"/g, '&quot;')})">${icon(playing ? 'i-pause' : 'i-play')}</button>` : '';
-  return `<div class="card job" data-id="${j.id}"><div class="coverwrap">${icon(srcIcon)}${art}${play}</div><div class="body">
-    <div class="job-head"><div class="job-title">${esc(j.title)}</div>${
-      /^https?:\/\//.test(j.input || '')
-        ? `<a class="src" href="${esc(j.input)}" target="_blank" rel="noopener" title="Open on ${j.kind === 'spotify' ? 'Spotify' : /youtu\.?be/.test(j.input) ? 'YouTube' : 'the source site'}">${icon(srcIcon)}</a>`
-        : `<span class="src" title="${srcLabel}">${icon(srcIcon)}</span>`}</div>
-    <div class="state ${cls}">${line}</div>
-    ${j.current && j.status === 'running' ? `<div class="now">${esc(j.current)}</div>` : ''}
-    ${bar}${missing}
-    <div class="actions">${primary}${retry}${again}${cancel}<span class="spacer"></span>
-      <button class="ibtn" title="Details" aria-label="Details" onclick="openDetails('${j.id}')">${icon('i-info')}</button>${remove}
-    </div>
-  </div></div>`;
-}
 // ---- preview player: one hidden <audio>, play/pause only ---------------------
 const player = new Audio();
 player.preload = 'none';
@@ -527,6 +460,176 @@ function paintPlayState() {
     b.innerHTML = icon(on ? 'i-pause' : 'i-play');
     b.title = on ? 'Pause' : 'Preview';
   });
+}
+
+// ---- job cards: created once, patched in place ----------------------------------
+async function act(id, method, path, confirmMsg) {
+  if (confirmMsg && !confirm(confirmMsg)) return;
+  try { const r = await api(`/api/jobs/${id}${path}`, { method }); if (!r.ok) alert(await detailOf(r)); } catch {}
+  refresh();
+}
+async function tryAgain(id) {
+  const j = JOBS[id]; if (!j) return;
+  try { const r = await api(`/api/jobs/${id}/retry`, { method: 'POST' }); if (r.ok) { refresh(); return; } } catch (e) { if (e.message === 'auth') return; }
+  if (!j.input) return;
+  try {
+    await api('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ input: j.input, format: j.format, bitrate: j.bitrate, numbered: !!j.numbered }) });
+    await api(`/api/jobs/${id}`, { method: 'DELETE' });
+  } catch {}
+  refresh();
+}
+
+function stateLine(j) {
+  const multi = (j.total || 0) > 1;
+  switch (j.status) {
+    case 'queued': return ['', 'Waiting…', false];
+    case 'running':
+      if (j.step === 'resolving') return ['', 'Looking up tracks…', true];
+      if (j.step === 'finishing') return ['', 'Finishing up…', true];
+      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : 'Downloading…', false];
+    case 'retrying': return ['', 'Retrying the missing ones…', true];
+    case 'done': return ['ok', `Ready${multi ? ' · ' + plural(j.files_count, 'song') : ''} · ${mb(j.size_bytes)}`, false];
+    case 'done_with_errors': return ['warn', `Ready · ${plural(j.files_count, 'song')} · ${plural(j.missing.length, 'song')} couldn't be found`, false];
+    case 'cancelled': return ['', 'Cancelled', false];
+    case 'interrupted': return ['bad', 'Interrupted — the server restarted', false];
+    default: return ['bad', `Couldn't download — ${j.error || 'unknown error'}`, false];
+  }
+}
+
+// The card's structure is fixed; every optional part exists from the start and
+// is shown/hidden. updateCard only touches what can change.
+function createCard(id) {
+  const el = document.createElement('div');
+  el.className = 'card job'; el.dataset.id = id;
+  el.innerHTML = `
+    <div class="coverwrap"><svg class="i src-glyph"><use href=""/></svg><img class="cover" alt="" loading="lazy" referrerpolicy="no-referrer" hidden>
+      <button class="play" data-act="play" data-job="${id}" aria-label="Preview" hidden>${icon('i-play')}</button></div>
+    <div class="body">
+      <div class="job-head"><div class="job-title"></div><a class="src" target="_blank" rel="noopener"><svg class="i"><use href=""/></svg></a></div>
+      <div class="state"><span class="spin" hidden></span><span class="txt"></span></div>
+      <div class="now" hidden></div>
+      <div class="bar" hidden><i></i></div>
+      <div class="missing" hidden></div>
+      <div class="actions">
+        <button class="primary" data-act="download" hidden>Download</button>
+        <button class="ghost" data-act="retry" hidden>Retry missing</button>
+        <button class="ghost" data-act="again" hidden>Try again</button>
+        <button class="ghost" data-act="cancel" hidden>Cancel</button>
+        <span class="spacer"></span>
+        <button class="ibtn" data-act="details" title="Details" aria-label="Details">${icon('i-info')}</button>
+        <button class="ibtn danger" data-act="remove" title="Remove" aria-label="Remove" hidden>${icon('i-trash')}</button>
+      </div>
+    </div>`;
+  el.querySelector('img.cover').addEventListener('error', e => { e.target.hidden = true; });
+  return el;
+}
+
+const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+const show = (el, on) => { if (el.hidden === !on) return; el.hidden = !on; };
+
+function updateCard(el, j) {
+  const q = (sel) => el.querySelector(sel);
+  const active = ['running', 'queued', 'retrying'].includes(j.status);
+  const ready = j.status === 'done' || j.status === 'done_with_errors';
+  const multi = (j.total || 0) > 1 || j.files_count > 1;
+  const [srcIcon, srcLabel] = SRC[j.kind] || ['i-search', j.kind];
+
+  // artwork + source glyph
+  q('.src-glyph use').setAttribute('href', '#' + srcIcon);
+  const img = q('img.cover');
+  if (j.cover) { if (img.getAttribute('src') !== j.cover) { img.hidden = false; img.src = j.cover; } }
+  else show(img, false);
+  const play = q('.play');
+  show(play, ready && !!j.first_file);
+  play.dataset.file = j.first_file || '';
+  q('.coverwrap .src-glyph').style.visibility = (img.hidden || !j.cover) ? '' : 'hidden';
+
+  // header
+  setText(q('.job-title'), j.title);
+  const src = q('.src'); src.querySelector('use').setAttribute('href', '#' + srcIcon);
+  const link = /^https?:\/\//.test(j.input || '') ? j.input : null;
+  if (link) { if (src.getAttribute('href') !== link) src.href = link; src.title = 'Open on ' + (j.kind === 'spotify' ? 'Spotify' : /youtu\.?be/.test(link) ? 'YouTube' : 'the source site'); }
+  else { src.removeAttribute('href'); src.title = srcLabel; }
+
+  // status
+  const [cls, text, spinning] = stateLine(j);
+  const st = q('.state');
+  const want = 'state' + (cls ? ' ' + cls : '');
+  if (st.className !== want) st.className = want;
+  show(q('.state .spin'), spinning);
+  setText(q('.state .txt'), text);
+  const now = q('.now'); show(now, j.status === 'running' && !!j.current); setText(now, j.current || '');
+
+  // progress
+  const bar = q('.bar'); const downloading = j.status === 'running' && j.step === 'downloading';
+  show(bar, downloading);
+  if (downloading) {
+    const pct = j.total ? Math.min(100, Math.round(100 * j.done / j.total)) : null;
+    bar.classList.toggle('indet', pct === null);
+    const w = (pct ?? 30) + '%'; if (bar.firstElementChild.style.width !== w) bar.firstElementChild.style.width = w;
+  }
+
+  // missing tracks
+  const miss = q('.missing'); const hasMissing = j.status === 'done_with_errors' && j.missing.length > 0;
+  show(miss, hasMissing);
+  if (hasMissing) { const html = `Couldn't find:<ul>${j.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`; if (miss.innerHTML !== html) miss.innerHTML = html; }
+
+  // actions
+  const dl = q('[data-act="download"]'); show(dl, ready);
+  if (ready) {
+    dl.dataset.url = (!multi && j.files_count === 1 && j.first_file) ? fileUrl(j.id, j.first_file) : `/api/jobs/${j.id}/zip`;
+    const prep = preparing.has(j.id);
+    if (dl.disabled !== prep) { dl.disabled = prep; dl.classList.toggle('preparing', prep); dl.innerHTML = prep ? spin() + 'Preparing…' : 'Download'; }
+  }
+  show(q('[data-act="retry"]'), j.status === 'done_with_errors');
+  show(q('[data-act="again"]'), ['error', 'interrupted', 'cancelled'].includes(j.status));
+  show(q('[data-act="cancel"]'), active);
+  show(q('[data-act="remove"]'), !active);
+}
+
+// one listener for every card action
+$('jobs').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]'); if (!btn) return;
+  const card = btn.closest('.job'); const id = card.dataset.id; const j = JOBS[id];
+  switch (btn.dataset.act) {
+    case 'play': toggleJob(id, btn.dataset.file); break;
+    case 'download': startDownload(id, btn.dataset.url); break;
+    case 'retry': act(id, 'POST', '/retry'); break;
+    case 'again': tryAgain(id); break;
+    case 'cancel': act(id, 'POST', '/cancel'); break;
+    case 'remove': act(id, 'DELETE', '', 'Remove this download and its files?'); break;
+    case 'details': openDetails(id); break;
+  }
+});
+
+// reconcile the list: create, patch, reorder, and animate out what's gone
+const nodes = new Map();
+let firstRender = true;
+function render(jobs) {
+  const el = $('jobs');
+  let empty = el.querySelector('.empty');
+  if (!jobs.length) {
+    if (!empty) { el.innerHTML = `<div class="empty">Paste a Spotify or YouTube link above to get started.<br>Private playlist or Liked Songs? Use <b>Import private playlist</b>.</div>`; nodes.clear(); }
+    return;
+  }
+  if (empty) empty.remove();
+  const live = new Set(jobs.map(j => j.id));
+  for (const [id, node] of nodes) {
+    if (live.has(id) || node.classList.contains('leave')) continue;
+    node.classList.add('leave'); nodes.delete(id);
+    const done = () => node.remove();
+    node.addEventListener('animationend', done, { once: true }); setTimeout(done, 400);
+  }
+  jobs.forEach((j, i) => {
+    let node = nodes.get(j.id);
+    if (!node) { node = createCard(j.id); if (!firstRender) node.classList.add('enter'); nodes.set(j.id, node); }
+    updateCard(node, j);
+    const at = el.children[i];
+    if (at !== node) el.insertBefore(node, at || null);
+  });
+  firstRender = false;
+  paintPlayState();
 }
 
 // ---- downloads: fire the file and show "Preparing…" until the browser starts receiving it
@@ -592,49 +695,14 @@ async function renderDetails() {
 
 // ---- polling ---------------------------------------------------------------------
 let seq = 0;
-const singleCache = {};
-const seenJobs = new Set();
-let lastOrder = '';
-const lastCard = {};
 async function refresh() {
   const my = ++seq;
   let data;
   try { data = await (await api('/api/jobs')).json(); } catch { return; }
   if (my !== seq) return;
-  const details = {};
-  await Promise.all(data.jobs.filter(j => (j.status === 'done' || j.status === 'done_with_errors') && j.files_count === 1 && (j.total || 0) <= 1)
-    .map(async j => {
-      const c = singleCache[j.id];
-      if (c && c.finished === j.finished) { details[j.id] = c.detail; return; }
-      try { const d = await (await api('/api/jobs/' + j.id)).json(); details[j.id] = d; singleCache[j.id] = { finished: j.finished, detail: d }; } catch {}
-    }));
-  if (my !== seq) return;
   for (const k in JOBS) delete JOBS[k];
   data.jobs.forEach(j => JOBS[j.id] = j);
-  const fresh = new Set(data.jobs.filter(j => seenJobs.size && !seenJobs.has(j.id)).map(j => j.id));
-  data.jobs.forEach(j => seenJobs.add(j.id));
-  const el = $('jobs');
-  if (!data.jobs.length) {
-    el.innerHTML = `<div class="empty">Paste a Spotify or YouTube link above to get started.<br>Private playlist or Liked Songs? Use <b>Import private playlist</b>.</div>`;
-    lastOrder = ''; for (const k in lastCard) delete lastCard[k];
-  } else {
-    const build = (j) => card(j, details[j.id]).replace('class="card job"', fresh.has(j.id) ? 'class="card job enter"' : 'class="card job"');
-    const order = data.jobs.map(j => j.id).join(',');
-    if (order !== lastOrder) {                       // list changed shape: rebuild
-      el.innerHTML = data.jobs.map(build).join('');
-      lastOrder = order;
-      for (const k in lastCard) delete lastCard[k];
-      data.jobs.forEach(j => lastCard[j.id] = build(j));
-    } else {                                          // same jobs: patch only what moved
-      data.jobs.forEach(j => {
-        const html = build(j);
-        if (html === lastCard[j.id]) return;
-        const node = el.querySelector(`[data-id="${j.id}"]`);
-        if (node) node.outerHTML = html; else el.innerHTML = data.jobs.map(build).join('');
-        lastCard[j.id] = html;
-      });
-    }
-  }
+  render(data.jobs);
   const active = data.jobs.filter(j => j.status === 'running' || j.status === 'retrying').length;
   document.title = active ? `(${active}) Yoink` : 'Yoink';
   $('foot').textContent = `Downloads are kept for ${data.keep_days} day${data.keep_days == 1 ? '' : 's'} · ${mb(data.disk_used)} used`;
