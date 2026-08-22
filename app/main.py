@@ -245,6 +245,27 @@ def parse_spotdl_file(path: Path, order_hint: Optional[list[str]] = None) -> lis
     return tracks
 
 
+def declared_length(path: Path) -> Optional[int]:
+    """The playlist/album length Spotify declared, as recorded by spotdl. When
+    Spotify throttles mid-pagination spotdl returns a truncated list without
+    raising; comparing against this catches it."""
+    try:
+        songs = json.loads(path.read_text(encoding="utf-8"))
+        lengths = {s.get("list_length") for s in songs if s.get("list_length")}
+        return max(lengths) if lengths else None
+    except (OSError, ValueError):
+        return None
+
+
+def is_truncated(path: Path) -> tuple[bool, int, Optional[int]]:
+    try:
+        got = len(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return True, 0, None
+    declared = declared_length(path)
+    return (declared is not None and got < declared), got, declared
+
+
 def match_files(expected: list[dict], files: list[Path]) -> tuple[dict[int, Path], list[dict]]:
     """Map expected track -> produced file. Returns (pos->file, missing)."""
     by_key: dict[str, list[Path]] = {}
@@ -515,12 +536,24 @@ def run_job(row: sqlite3.Row) -> None:
             else:
                 if not spotdl_file.is_file():
                     queries = json.loads(row["input"]) if kind in ("csv", "retry") else [row["input"]]
-                    code = run_step(handle, ["spotdl", "save", *queries, "--save-file",
-                                             str(spotdl_file), *SPOTDL_FLAGS],
-                                    log, job_dir, kind, state, progress)
-                    if handle.cancelled or state.get("stalled"):
-                        raise _Stop()
-                    if code != 0 or not spotdl_file.is_file():
+                    for attempt in range(2):
+                        code = run_step(handle, ["spotdl", "save", *queries, "--save-file",
+                                                 str(spotdl_file), *SPOTDL_FLAGS],
+                                        log, job_dir, kind, state, progress)
+                        if handle.cancelled or state.get("stalled"):
+                            raise _Stop()
+                        if code == 0 and spotdl_file.is_file():
+                            short, got, declared = is_truncated(spotdl_file)
+                            if not short:
+                                break
+                            log.write(f"Spotify returned only {got} of {declared} tracks (rate-limited)\n"); log.flush()
+                            if attempt == 1:
+                                spotdl_file.unlink(missing_ok=True)
+                                raise RuntimeError(f"Spotify only returned {got} of {declared} tracks — it's rate-limiting; try again in a minute")
+                        if attempt == 0:
+                            log.write("Spotify didn't answer fully; retrying in a few seconds\n"); log.flush()
+                            time.sleep(4)
+                    else:
                         raise RuntimeError("couldn't look up the tracks on Spotify")
                 if not expected:
                     hint = json.loads(row["input"]) if kind in ("csv", "retry") else None
@@ -848,13 +881,24 @@ async def _preflight(request: Request):
     token = uuid.uuid4().hex[:16]
     out = PREFLIGHT_DIR / f"{token}.spotdl"
     cmd = ["spotdl", "save", text, "--save-file", str(out), *SPOTDL_FLAGS]
-    try:
-        res = await asyncio.to_thread(
-            subprocess.run, cmd, capture_output=True, text=True, timeout=300, cwd=str(PREFLIGHT_DIR))
-    except subprocess.TimeoutExpired:
-        raise HTTPException(504, "Spotify lookup timed out")
-    if res.returncode != 0 or not out.is_file():
-        raise HTTPException(400, "couldn't find that on Spotify")
+    for attempt in range(2):  # Spotify sometimes refuses the session page briefly; try twice
+        try:
+            res = await asyncio.to_thread(
+                subprocess.run, cmd, capture_output=True, text=True, timeout=300, cwd=str(PREFLIGHT_DIR))
+        except subprocess.TimeoutExpired:
+            raise HTTPException(504, "Spotify lookup timed out")
+        if res.returncode == 0 and out.is_file():
+            short, got, declared = is_truncated(out)
+            if not short:
+                break
+            if attempt == 1:
+                out.unlink(missing_ok=True)
+                raise HTTPException(503, f"Spotify only returned {got} of {declared} tracks (it's rate-limiting) — try again in a minute")
+        if attempt == 0:
+            await asyncio.sleep(4)
+    else:
+        raise HTTPException(400, "Spotify isn't answering right now — try again in a moment"
+                            if "session" in (res.stdout + res.stderr).lower() else "couldn't find that on Spotify")
     tracks = parse_spotdl_file(out)
     if not tracks:
         out.unlink(missing_ok=True)

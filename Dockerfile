@@ -39,6 +39,17 @@ RUN sed -i 's/YTMusic(language="de")/YTMusic(language="en")/' \
 
 COPY app /srv/app
 
+# Route the `spotdl` CLI through our spotapi hash-cache patch (see
+# app/spotdl_patch.py): one Spotify lookup drops from ~10 s to ~1.5 s and a
+# 50-track playlist from minutes to ~1 s. Fails loudly if spotdl's entry
+# point ever moves, rather than silently running unpatched.
+RUN python3 -c "from spotdl import console_entry_point" \
+    && printf '%s\n' '#!/usr/local/bin/python3' 'import sys' 'sys.path.insert(0, "/srv")' \
+       'import app.spotdl_patch  # noqa: F401  (spotapi hash cache)' \
+       'from spotdl import console_entry_point' \
+       'sys.exit(console_entry_point())' > /usr/local/bin/spotdl \
+    && chmod +x /usr/local/bin/spotdl
+
 # Non-root; HOME lives on the /data volume so spotdl/yt-dlp caches persist.
 # /data and /downloads are created here so first-run named volumes inherit
 # appuser ownership instead of root.

@@ -94,6 +94,24 @@ app/static/index.html UI (single file, no build step)
 Built with assistance from Claude. Engine credit: spotDL and yt-dlp do the
 actual heavy lifting.
 
+## Why lookups are fast (and a note on Spotify rate limits)
+
+spotdl fetches Spotify metadata through **spotapi**, which discovers Spotify's
+GraphQL query hashes by downloading the entire web-player JavaScript bundle
+(~75 files) — per client, and spotdl makes a fresh client for the track, the
+artist and the album of every song. That's ~230 requests and ~10 s for one
+track, and minutes for a playlist. `app/spotdl_patch.py` (loaded by the
+`spotdl` launcher baked into the image) caches the harvested hashes in
+`/data/home/.cache/yoink/spotapi-hashes.json` for a day: one track ≈ 1.5 s,
+a 50-track playlist ≈ 1 s, and ~100× fewer requests to Spotify. Override the
+cache path with `YOINK_HASH_CACHE`.
+
+Spotify still throttles the anonymous session page after bursts of lookups.
+When that happens spotdl can return a *partial* playlist without an error;
+Yoink compares the returned count against the playlist's declared length and
+retries once, then refuses with "Spotify only returned N of M tracks" rather
+than quietly downloading a truncated playlist. Wait a minute and try again.
+
 ## Known limitations (v1)
 
 - The Docker healthcheck proves the web server is up, not that the download
