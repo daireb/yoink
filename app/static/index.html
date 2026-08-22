@@ -25,10 +25,11 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
   body.dragging::after { content: "Drop the CSV to request it"; position: fixed; inset: 0; display: grid; place-items: center; background: rgba(124,140,255,.12); border: 3px dashed var(--accent); color: var(--accent); font-size: 20px; font-weight: 600; z-index: 5; pointer-events: none; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 18px 60px; }
-  header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
-  header img { width: 34px; height: 34px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  header img { width: 32px; height: 32px; }
   header h1 { font-size: 24px; letter-spacing: -0.4px; flex: 1; }
+  header .ibtn { margin-right: -7px; }   /* glyph, not hit-box, sits on the column edge */
 
   svg.i { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; display: block; }
   .ibtn { background: transparent; border: 1px solid transparent; color: var(--dim); border-radius: 9px; padding: 7px; cursor: pointer; display: inline-flex; }
@@ -49,10 +50,10 @@
   }
   .field .go:hover { filter: brightness(1.1); }
   .field .go:disabled { opacity: .6; cursor: default; filter: none; }
-  .hint { color: var(--dim); font-size: 13px; margin: 10px 4px 0; }
+  .hint { color: var(--dim); font-size: 13px; margin: 12px 16px 0; }
   .hint a { color: var(--accent); text-decoration: none; }
   .hint a:hover { text-decoration: underline; }
-  .err { color: var(--err); font-size: 13.5px; margin: 8px 4px 0; }
+  .err { color: var(--err); font-size: 13.5px; margin: 8px 16px 0; }
   .err.soft { color: var(--dim); }
 
   select, input[type=password] {
@@ -68,12 +69,16 @@
   .linkish { background: none; border: 0; color: var(--accent); padding: 0; font-size: inherit; font-weight: 500; cursor: pointer; }
   .linkish:hover { text-decoration: underline; filter: none; }
 
-  .jobs { margin-top: 20px; }
-  .job { padding: 15px 17px; margin-bottom: 10px; }
+  .jobs { margin-top: 24px; }
+  .job { padding: 16px; margin-bottom: 12px; display: flex; gap: 14px; transition: border-color .15s; }
+  .job:hover { border-color: #363c52; }
+  .cover { width: 64px; height: 64px; border-radius: 8px; flex-shrink: 0; background: var(--panel2); object-fit: cover; display: grid; place-items: center; color: var(--dim); }
+  .cover svg.i { width: 24px; height: 24px; }
+  .body { flex: 1; min-width: 0; }
   .job-head { display: flex; align-items: flex-start; gap: 10px; }
   .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; line-height: 1.35; }
-  .src { color: var(--dim); margin-top: 1px; flex-shrink: 0; }
-  a.src:hover { color: var(--accent); }
+  .src { color: var(--dim); flex-shrink: 0; padding: 7px; margin: -7px -7px -7px 0; border-radius: 9px; display: inline-flex; }
+  a.src:hover { color: var(--accent); background: var(--panel2); }
   .state { margin-top: 6px; font-size: 14px; color: var(--dim); }
   .state.ok { color: var(--ok); } .state.warn { color: var(--warn); } .state.bad { color: var(--err); }
   .bar { height: 5px; background: var(--panel2); border-radius: 999px; margin: 10px 0 2px; overflow: hidden; }
@@ -82,11 +87,13 @@
   @keyframes slide { from { margin-left: 0 } to { margin-left: 70% } }
   .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
   .actions .spacer { flex: 1; }
+  .actions .ibtn:last-child { margin-right: -7px; }
+  @media (max-width: 480px) { .cover { width: 48px; height: 48px; } .job { gap: 12px; } }
   .missing { margin-top: 10px; font-size: 13.5px; }
   .missing ul { margin: 6px 0 0 18px; color: var(--dim); }
 
   .empty { text-align: center; color: var(--dim); padding: 40px 0; font-size: 14px; }
-  footer { text-align: center; color: var(--dim); font-size: 12.5px; margin-top: 28px; }
+  footer { text-align: center; color: var(--dim); font-size: 12.5px; margin-top: 32px; }
 
   .overlay { position: fixed; inset: 0; background: rgba(15,17,23,.82); display: none; place-items: center; z-index: 10; padding: 18px; backdrop-filter: blur(4px); }
   .overlay.show { display: grid; }
@@ -176,7 +183,7 @@
 
 <div class="wrap">
   <header>
-    <img src="/static/icon-192.png" alt="">
+    <img src="/static/icon-header.png" alt="">
     <h1>Reprise</h1>
     <button class="ibtn" onclick="openOptions()" aria-label="Options" title="Options"><svg class="i"><use href="#i-gear"/></svg></button>
   </header>
@@ -378,7 +385,10 @@ function card(j, d) {
   const remove = !active ? `<button class="ibtn danger" title="Remove" aria-label="Remove" onclick="act('${j.id}','DELETE','', 'Remove this download and its files?')">${icon('i-trash')}</button>` : '';
   const missing = (j.status === 'done_with_errors' && j.missing.length)
     ? `<div class="missing">Couldn't find:<ul>${j.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>` : '';
-  return `<div class="card job">
+  const cover = j.cover
+    ? `<img class="cover" src="${esc(j.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(coverFallback('${srcIcon}'))">`
+    : `<div class="cover">${icon(srcIcon)}</div>`;
+  return `<div class="card job">${cover}<div class="body">
     <div class="job-head"><div class="job-title">${esc(j.title)}</div>${
       /^https?:\/\//.test(j.input || '')
         ? `<a class="src" href="${esc(j.input)}" target="_blank" rel="noopener" title="Open on ${j.kind === 'spotify' ? 'Spotify' : /youtu\.?be/.test(j.input) ? 'YouTube' : 'the source site'}">${icon(srcIcon)}</a>`
@@ -388,8 +398,9 @@ function card(j, d) {
     <div class="actions">${primary}${retry}${again}${cancel}<span class="spacer"></span>
       <button class="ibtn" title="Details" aria-label="Details" onclick="openDetails('${j.id}')">${icon('i-info')}</button>${remove}
     </div>
-  </div>`;
+  </div></div>`;
 }
+function coverFallback(iconId) { const d = document.createElement('div'); d.className = 'cover'; d.innerHTML = icon(iconId); return d; }
 
 // ---- details modal --------------------------------------------------------------
 async function openDetails(id) { detailsId = id; $('details').classList.add('show'); await renderDetails(); }

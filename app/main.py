@@ -103,6 +103,7 @@ COLUMNS = {
     "expected": "TEXT",   # JSON: ordered list of {pos,name,artists,duration,url,id}
     "missing": "TEXT",    # JSON: subset of expected not found on disk
     "parent_id": "TEXT",  # set on retry jobs; hidden from the list
+    "cover": "TEXT",      # album/playlist/video artwork URL for the card
 }
 
 
@@ -126,6 +127,14 @@ def init_db() -> None:
             "UPDATE jobs SET status='interrupted', error='server restarted mid-job',"
             " finished=? WHERE status IN ('running','retrying')", (time.time(),)
         )
+        for r in conn.execute("SELECT id, dir FROM jobs WHERE cover IS NULL").fetchall():
+            f = Path(r[1]) / "tracks.spotdl"
+            try:
+                songs = json.loads(f.read_text(encoding="utf-8")) if f.is_file() else []
+                if songs and songs[0].get("cover_url"):
+                    conn.execute("UPDATE jobs SET cover=? WHERE id=?", (songs[0]["cover_url"], r[0]))
+            except (OSError, ValueError):
+                pass
         # rows from before `finished` existed would otherwise never expire
         conn.execute(
             "UPDATE jobs SET finished=created WHERE finished IS NULL"
@@ -215,6 +224,7 @@ def parse_spotdl_file(path: Path, order_hint: Optional[list[str]] = None) -> lis
         "url": s.get("url") or "",
         "id": s.get("song_id") or "",
         "list_name": s.get("list_name"),
+        "cover": s.get("cover_url") or "",
         "pos": s.get("list_position"),
         "_disc": s.get("disc_number") or 0,
         "_track": s.get("track_number") or 0,
@@ -435,7 +445,7 @@ def run_job(row: sqlite3.Row) -> None:
                     expected = info["tracks"]
                     title = info["title"]
                     update_job(job_id, title=title, total=len(expected) or None,
-                               expected=json.dumps(expected))
+                               expected=json.dumps(expected), cover=info.get("cover") or None)
                     state["total"] = len(expected) or None
             else:
                 if not spotdl_file.is_file():
@@ -458,7 +468,8 @@ def run_job(row: sqlite3.Row) -> None:
                     elif kind in ("spotify", "search") and len(expected) == 1:
                         t = expected[0]
                         title = f"{', '.join(t['artists'])} - {t['name']}" if t["artists"] else t["name"]
-                    update_job(job_id, title=title, total=len(expected), expected=json.dumps(expected))
+                    update_job(job_id, title=title, total=len(expected), expected=json.dumps(expected),
+                               cover=expected[0].get("cover") or None)
                     state["total"] = len(expected)
 
             if handle.cancelled:
@@ -528,13 +539,21 @@ def probe_media(url: str) -> dict:
     if out.returncode != 0 or not out.stdout.strip():
         raise RuntimeError("couldn't read that link")
     info = json.loads(out.stdout)
+
+    def thumb(obj: dict) -> str:
+        if obj.get("thumbnail"):
+            return obj["thumbnail"]
+        ts = obj.get("thumbnails") or []
+        return ts[-1].get("url", "") if ts else ""
+
     if info.get("_type") == "playlist":
         entries = [e for e in (info.get("entries") or []) if e]
         tracks = [{"pos": i, "name": e.get("title") or f"item {i}", "artists": [],
                    "duration": e.get("duration") or 0, "url": e.get("url") or "", "id": e.get("id") or ""}
                   for i, e in enumerate(entries, 1)]
-        return {"title": info.get("title") or url, "tracks": tracks, "is_playlist": True}
-    return {"title": info.get("title") or url, "is_playlist": False,
+        return {"title": info.get("title") or url, "tracks": tracks, "is_playlist": True,
+                "cover": thumb(info) or (thumb(entries[0]) if entries else "")}
+    return {"title": info.get("title") or url, "is_playlist": False, "cover": thumb(info),
             "tracks": [{"pos": 1, "name": info.get("title") or url, "artists": [],
                         "duration": info.get("duration") or 0, "url": url, "id": info.get("id") or ""}]}
 
@@ -803,6 +822,8 @@ async def submit(request: Request):
     if numbered is None:
         numbered = (total or 0) > 1
     job_id = create_job(kind, text, str(title)[:120], fmt, bitrate, numbered, total, expected)
+    if expected and expected[0].get("cover"):
+        update_job(job_id, cover=expected[0]["cover"])
     if pre is not None:
         shutil.move(str(pre), str(Path(job_row(job_id)["dir"]) / "tracks.spotdl"))
     return {"id": job_id}
@@ -864,7 +885,7 @@ async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
 
 def public_job(r: sqlite3.Row, with_files: bool = False) -> dict:
     d = {k: r[k] for k in ("id", "created", "finished", "kind", "title", "format", "bitrate",
-                           "numbered", "status", "step", "total", "done", "error")}
+                           "numbered", "status", "step", "total", "done", "error", "cover")}
     # the original link/query, so the UI can offer "Try again" (not for CSV jobs: that's a URL list)
     d["input"] = r["input"] if r["kind"] in ("spotify", "media", "search") else None
     job_dir = Path(r["dir"])
