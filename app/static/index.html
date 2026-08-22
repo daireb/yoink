@@ -73,6 +73,7 @@
   .job-head { display: flex; align-items: flex-start; gap: 10px; }
   .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; line-height: 1.35; }
   .src { color: var(--dim); margin-top: 1px; flex-shrink: 0; }
+  a.src:hover { color: var(--accent); }
   .state { margin-top: 6px; font-size: 14px; color: var(--dim); }
   .state.ok { color: var(--ok); } .state.warn { color: var(--warn); } .state.bad { color: var(--err); }
   .bar { height: 5px; background: var(--panel2); border-radius: 999px; margin: 10px 0 2px; overflow: hidden; }
@@ -378,7 +379,10 @@ function card(j, d) {
   const missing = (j.status === 'done_with_errors' && j.missing.length)
     ? `<div class="missing">Couldn't find:<ul>${j.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>` : '';
   return `<div class="card job">
-    <div class="job-head"><div class="job-title">${esc(j.title)}</div><span class="src" title="${srcLabel}">${icon(srcIcon)}</span></div>
+    <div class="job-head"><div class="job-title">${esc(j.title)}</div>${
+      /^https?:\/\//.test(j.input || '')
+        ? `<a class="src" href="${esc(j.input)}" target="_blank" rel="noopener" title="Open on ${j.kind === 'spotify' ? 'Spotify' : 'the source site'}">${icon(srcIcon)}</a>`
+        : `<span class="src" title="${srcLabel}">${icon(srcIcon)}</span>`}</div>
     <div class="state ${cls}">${line}</div>
     ${bar}${missing}
     <div class="actions">${primary}${retry}${again}${cancel}<span class="spacer"></span>
