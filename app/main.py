@@ -656,6 +656,9 @@ def authed(request: Request) -> bool:
 
 # ------------------------------------------------------------------------- app
 
+import mimetypes
+mimetypes.add_type("font/woff2", ".woff2")  # slim images lack /etc/mime.types
+
 app = FastAPI(title="Yoink")
 PREFLIGHT_SLOTS = asyncio.Semaphore(2)
 LOGIN_LOCK = asyncio.Lock()
