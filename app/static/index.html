@@ -203,11 +203,12 @@
   .dropzone:hover, .dropzone.hover { border-color: var(--accent); background: rgba(124,140,255,.06); }
   .dropzone span { color: var(--accent); }
   .dropzone svg.i { width: 22px; height: 22px; }
-  .opt label { display: block; color: var(--dim); font-size: 12.5px; margin-bottom: 5px; }
-  .check { display: flex; align-items: center; gap: 9px; font-size: 14.5px; }
-  .check input { width: 16px; height: 16px; accent-color: var(--accent2); }
+  .optgrid { gap: 14px; }
+  .opt label { display: block; color: var(--dim); font-size: 12.5px; margin-bottom: 6px; }
+  .opt label.check { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; margin: 2px 0 0; cursor: pointer; }
+  .check input { width: 15px; height: 15px; margin: 0; flex-shrink: 0; accent-color: var(--accent2); }
   .help { color: var(--dim); font-size: 12.5px; margin: 4px 0 0 25px; }
-  .help.versions { margin: 14px 0 0; white-space: pre-line; font-family: var(--mono); font-size: 12px; }
+  .help.versions { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--line); white-space: pre-line; font-family: var(--mono); font-size: 12px; }
   .help.versions.warn { color: var(--warn); }
   #loginErr { color: var(--err); font-size: 13px; min-height: 18px; }
   .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: rot .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
