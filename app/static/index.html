@@ -70,11 +70,11 @@
   .linkish:hover { text-decoration: underline; filter: none; }
 
   .jobs { margin-top: 24px; }
-  .job { padding: 16px; margin-bottom: 12px; display: flex; gap: 14px; transition: border-color .15s; }
+  .job { padding: 0; margin-bottom: 12px; display: flex; align-items: stretch; overflow: hidden; transition: border-color .15s; }
   .job:hover { border-color: #363c52; }
-  .cover { width: 64px; height: 64px; border-radius: 8px; flex-shrink: 0; background: var(--panel2); object-fit: cover; display: grid; place-items: center; color: var(--dim); }
-  .cover svg.i { width: 24px; height: 24px; }
-  .body { flex: 1; min-width: 0; }
+  .cover { width: 112px; flex-shrink: 0; align-self: stretch; background: var(--panel2); object-fit: cover; display: grid; place-items: center; color: var(--dim); border-right: 1px solid var(--line); }
+  .cover svg.i { width: 26px; height: 26px; }
+  .body { flex: 1; min-width: 0; padding: 16px; }
   .job-head { display: flex; align-items: flex-start; gap: 10px; }
   .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; line-height: 1.35; }
   .src { color: var(--dim); flex-shrink: 0; padding: 7px; margin: -7px -7px -7px 0; border-radius: 9px; display: inline-flex; }
@@ -88,7 +88,7 @@
   .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
   .actions .spacer { flex: 1; }
   .actions .ibtn:last-child { margin-right: -7px; }
-  @media (max-width: 480px) { .cover { width: 48px; height: 48px; } .job { gap: 12px; } }
+  @media (max-width: 480px) { .cover { width: 84px; } .body { padding: 14px; } }
   .missing { margin-top: 10px; font-size: 13.5px; }
   .missing ul { margin: 6px 0 0 18px; color: var(--dim); }
 
