@@ -142,6 +142,8 @@
   #loginErr { color: var(--err); font-size: 13px; min-height: 18px; }
   .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: rot .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
   .go .spin { border-color: rgba(255,255,255,.35); border-top-color: #fff; margin: 0; }
+  button.preparing { opacity: .85; }
+  button.preparing .spin { border-color: rgba(255,255,255,.35); border-top-color: #fff; }
   @keyframes rot { to { transform: rotate(360deg) } }
 </style>
 </head>
@@ -407,8 +409,12 @@ function card(j, d) {
   const bar = (j.status === 'running' && j.step === 'downloading') ? `<div class="bar ${pct === null ? 'indet' : ''}"><i style="width:${pct ?? 30}%"></i></div>` : '';
   const [srcIcon, srcLabel] = SRC[j.kind] || ['i-search', j.kind];
   let primary = '';
-  if (ready && !multi && d && d.files.length === 1) primary = `<a class="btn" href="/api/jobs/${j.id}/files/${encodeURIComponent(d.files[0].name)}"><button>Download</button></a>`;
-  else if (ready) primary = `<a class="btn" href="/api/jobs/${j.id}/zip"><button>Download</button></a>`;
+  if (ready) {
+    const url = (!multi && d && d.files.length === 1) ? fileUrl(j.id, d.files[0].name) : `/api/jobs/${j.id}/zip`;
+    primary = preparing.has(j.id)
+      ? `<button disabled class="preparing"><span class="spin"></span>Preparing…</button>`
+      : `<button onclick="startDownload('${j.id}', ${JSON.stringify(url).replace(/"/g, '&quot;')})">Download</button>`;
+  }
   const retry = j.status === 'done_with_errors' ? `<button class="ghost" onclick="act('${j.id}','POST','/retry')">Retry missing</button>` : '';
   const again = ['error', 'interrupted', 'cancelled'].includes(j.status) ? `<button class="ghost" onclick="tryAgain('${j.id}')">Try again</button>` : '';
   const cancel = active ? `<button class="ghost" onclick="act('${j.id}','POST','/cancel')">Cancel</button>` : '';
@@ -465,6 +471,25 @@ function paintPlayState() {
     b.innerHTML = icon(on ? 'i-pause' : 'i-play');
     b.title = on ? 'Pause' : 'Preview';
   });
+}
+
+// ---- downloads: fire the file and show "Preparing…" until the browser starts receiving it
+const preparing = new Set();
+function startDownload(id, url) {
+  if (preparing.has(id)) return;
+  const tok = Math.random().toString(36).slice(2, 14);
+  preparing.add(id); refresh();
+  const a = document.createElement('a'); a.href = `${url}?t=${tok}`; a.download = ''; a.style.display = 'none';
+  document.body.appendChild(a); a.click(); a.remove();
+  const t0 = Date.now();
+  const poll = setInterval(() => {
+    const started = document.cookie.split(';').some(c => c.trim() === `reprise_dl=${tok}`);
+    if (started || Date.now() - t0 > 120000) {
+      clearInterval(poll); preparing.delete(id);
+      document.cookie = 'reprise_dl=; Max-Age=0; path=/';
+      refresh();
+    }
+  }, 150);
 }
 
 // ---- details modal --------------------------------------------------------------

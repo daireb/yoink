@@ -995,6 +995,14 @@ def remove(job_id: str, files: int = 1):
     return {"ok": True}
 
 
+def started_cookie(resp, t: Optional[str]):
+    """Download-started handshake: the page polls for this cookie to know the
+    browser has begun receiving the file (used to end the 'Preparing…' state)."""
+    if t and re.fullmatch(r"[a-z0-9]{8,32}", t):
+        resp.set_cookie("reprise_dl", t, max_age=60, samesite="lax", path="/")
+    return resp
+
+
 def safe_file(job_dir: Path, name: str) -> Path:
     p = (job_dir / name).resolve()
     if not str(p).startswith(str(job_dir.resolve()) + os.sep):
@@ -1005,7 +1013,7 @@ def safe_file(job_dir: Path, name: str) -> Path:
 
 
 @app.get("/api/jobs/{job_id}/files/{name:path}")
-def download_file(job_id: str, name: str, request: Request):
+def download_file(job_id: str, name: str, request: Request, t: Optional[str] = None):
     row = job_row(job_id)
     if not row:
         raise HTTPException(404, "no such job")
@@ -1016,7 +1024,8 @@ def download_file(job_id: str, name: str, request: Request):
     rng = request.headers.get("range")
     m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng or "")
     if not m:
-        return FileResponse(p, media_type=media_type, filename=p.name, headers={"Accept-Ranges": "bytes"})
+        return started_cookie(FileResponse(p, media_type=media_type, filename=p.name,
+                                           headers={"Accept-Ranges": "bytes"}), t)
     # byte ranges: needed for seeking, and iOS Safari won't play audio without them
     start = int(m.group(1)) if m.group(1) else max(0, size - int(m.group(2) or 0))
     end = int(m.group(2)) if m.group(1) and m.group(2) else size - 1
@@ -1044,7 +1053,7 @@ def download_file(job_id: str, name: str, request: Request):
 
 
 @app.get("/api/jobs/{job_id}/zip")
-def download_zip(job_id: str):
+def download_zip(job_id: str, t: Optional[str] = None):
     row = job_row(job_id)
     if not row:
         raise HTTPException(404, "no such job")
@@ -1058,8 +1067,8 @@ def download_zip(job_id: str):
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
         for f in members:
             z.write(f, f.name)
-    return FileResponse(zpath, filename=f"{slugify(row['title'])}.zip",
-                        background=BackgroundTask(zpath.unlink, missing_ok=True))
+    return started_cookie(FileResponse(zpath, filename=f"{slugify(row['title'])}.zip",
+                                       background=BackgroundTask(zpath.unlink, missing_ok=True)), t)
 
 
 STATIC_DIR = Path(__file__).parent / "static"
