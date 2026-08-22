@@ -125,6 +125,8 @@
   a.src:hover { color: var(--accent); background: var(--panel2); }
   .state { margin-top: 6px; font-family: var(--mono); font-size: 12.5px; letter-spacing: -0.01em; color: var(--dim); }
   .state.ok { color: var(--ok); } .state.warn { color: var(--warn); } .state.bad { color: var(--err); }
+  .now { font-family: var(--mono); font-size: 12px; color: var(--dim); opacity: .8; margin-top: 3px;
+         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar { height: 5px; background: var(--panel2); border-radius: 999px; margin: 10px 0 2px; overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .5s; }
   .bar.indet i { width: 30% !important; animation: slide 1.2s ease-in-out infinite alternate; }
@@ -280,6 +282,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&
 const mb = (b) => b >= 1e9 ? (b/1e9).toFixed(2)+' GB' : b >= 1e6 ? (b/1e6).toFixed(b >= 1e8 ? 0 : 1)+' MB' : Math.round(b/1e3)+' KB';
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const icon = (id) => `<svg class="i"><use href="#${id}"/></svg>`;
+// a spinner created mid-cycle starts where a continuous one would be, so
+// re-rendering never makes it jump back to 0deg
+const spin = () => `<span class="spin" style="animation-delay:${-(performance.now() % 800)}ms"></span>`;
 const SRC = { spotify: ['i-spotify', 'Spotify'], media: ['i-youtube', 'YouTube / web'], csv: ['i-file', 'Exportify CSV'], search: ['i-search', 'Search'] };
 let pending = null;        // request waiting in the confirm sheet
 let detailsId = null;      // job shown in the details modal
@@ -322,7 +327,7 @@ async function doLogin() {
 let slowTimer = null;
 function busy(on) {
   $('goBtn').disabled = on;
-  $('goBtn').innerHTML = on ? '<span class="spin"></span>' : icon('i-arrow');
+  $('goBtn').innerHTML = on ? spin() : icon('i-arrow');
   clearTimeout(slowTimer);
   $('subErr').classList.remove('soft');
   if (on) slowTimer = setTimeout(() => { $('subErr').classList.add('soft'); $('subErr').textContent = 'Still looking up — big playlists can take a minute or two.'; }, 8000);
@@ -438,10 +443,10 @@ function stateLine(j) {
   switch (j.status) {
     case 'queued': return ['', 'Waiting…'];
     case 'running':
-      if (j.step === 'resolving') return ['', '<span class="spin"></span>Looking up tracks…'];
-      if (j.step === 'finishing') return ['', '<span class="spin"></span>Finishing up…'];
+      if (j.step === 'resolving') return ['', `${spin()}Looking up tracks…`];
+      if (j.step === 'finishing') return ['', `${spin()}Finishing up…`];
       return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : 'Downloading…'];
-    case 'retrying': return ['', '<span class="spin"></span>Retrying the missing ones…'];
+    case 'retrying': return ['', `${spin()}Retrying the missing ones…`];
     case 'done': return ['ok', `Ready${multi ? ' · ' + plural(j.files_count, 'song') : ''} · ${mb(j.size_bytes)}`];
     case 'done_with_errors': return ['warn', `Ready · ${plural(j.files_count, 'song')} · <b>${plural(j.missing.length, 'song')} couldn't be found</b>`];
     case 'cancelled': return ['', 'Cancelled'];
@@ -462,7 +467,7 @@ function card(j, d) {
   if (ready) {
     const url = (!multi && d && d.files.length === 1) ? fileUrl(j.id, d.files[0].name) : `/api/jobs/${j.id}/zip`;
     primary = preparing.has(j.id)
-      ? `<button disabled class="preparing"><span class="spin"></span>Preparing…</button>`
+      ? `<button disabled class="preparing">${spin()}Preparing…</button>`
       : `<button onclick="startDownload('${j.id}', ${JSON.stringify(url).replace(/"/g, '&quot;')})">Download</button>`;
   }
   const retry = j.status === 'done_with_errors' ? `<button class="ghost" onclick="act('${j.id}','POST','/retry')">Retry missing</button>` : '';
@@ -474,12 +479,13 @@ function card(j, d) {
   const art = j.cover ? `<img class="cover" src="${esc(j.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
   const playing = jobPlaying(j.id);
   const play = ready && j.first_file ? `<button class="play ${playing ? 'on' : ''}" data-job="${j.id}" title="${playing ? 'Pause' : 'Preview'}" aria-label="Preview" onclick="toggleJob('${j.id}',${JSON.stringify(j.first_file).replace(/"/g, '&quot;')})">${icon(playing ? 'i-pause' : 'i-play')}</button>` : '';
-  return `<div class="card job"><div class="coverwrap">${icon(srcIcon)}${art}${play}</div><div class="body">
+  return `<div class="card job" data-id="${j.id}"><div class="coverwrap">${icon(srcIcon)}${art}${play}</div><div class="body">
     <div class="job-head"><div class="job-title">${esc(j.title)}</div>${
       /^https?:\/\//.test(j.input || '')
         ? `<a class="src" href="${esc(j.input)}" target="_blank" rel="noopener" title="Open on ${j.kind === 'spotify' ? 'Spotify' : /youtu\.?be/.test(j.input) ? 'YouTube' : 'the source site'}">${icon(srcIcon)}</a>`
         : `<span class="src" title="${srcLabel}">${icon(srcIcon)}</span>`}</div>
     <div class="state ${cls}">${line}</div>
+    ${j.current && j.status === 'running' ? `<div class="now">${esc(j.current)}</div>` : ''}
     ${bar}${missing}
     <div class="actions">${primary}${retry}${again}${cancel}<span class="spacer"></span>
       <button class="ibtn" title="Details" aria-label="Details" onclick="openDetails('${j.id}')">${icon('i-info')}</button>${remove}
@@ -563,7 +569,7 @@ async function openDetails(id) {
   if (j) {
     $('dTitle').textContent = j.title;
     $('dMeta').innerHTML = metaHtml(j);
-    $('dFiles').innerHTML = j.files_count ? `<div class="sub"><span class="spin"></span>Loading files…</div>` : '';
+    $('dFiles').innerHTML = j.files_count ? `<div class="sub">${spin()}Loading files…</div>` : '';
     $('dLog').textContent = ''; $('dLog').style.display = 'none';
   }
   $('details').classList.add('show');
@@ -588,6 +594,8 @@ async function renderDetails() {
 let seq = 0;
 const singleCache = {};
 const seenJobs = new Set();
+let lastOrder = '';
+const lastCard = {};
 async function refresh() {
   const my = ++seq;
   let data;
@@ -605,8 +613,28 @@ async function refresh() {
   data.jobs.forEach(j => JOBS[j.id] = j);
   const fresh = new Set(data.jobs.filter(j => seenJobs.size && !seenJobs.has(j.id)).map(j => j.id));
   data.jobs.forEach(j => seenJobs.add(j.id));
-  $('jobs').innerHTML = data.jobs.length ? data.jobs.map(j => card(j, details[j.id]).replace('class="card job"', fresh.has(j.id) ? 'class="card job enter"' : 'class="card job"')).join('')
-    : `<div class="empty">Paste a Spotify or YouTube link above to get started.<br>Private playlist or Liked Songs? Use <b>Import private playlist</b>.</div>`;
+  const el = $('jobs');
+  if (!data.jobs.length) {
+    el.innerHTML = `<div class="empty">Paste a Spotify or YouTube link above to get started.<br>Private playlist or Liked Songs? Use <b>Import private playlist</b>.</div>`;
+    lastOrder = ''; for (const k in lastCard) delete lastCard[k];
+  } else {
+    const build = (j) => card(j, details[j.id]).replace('class="card job"', fresh.has(j.id) ? 'class="card job enter"' : 'class="card job"');
+    const order = data.jobs.map(j => j.id).join(',');
+    if (order !== lastOrder) {                       // list changed shape: rebuild
+      el.innerHTML = data.jobs.map(build).join('');
+      lastOrder = order;
+      for (const k in lastCard) delete lastCard[k];
+      data.jobs.forEach(j => lastCard[j.id] = build(j));
+    } else {                                          // same jobs: patch only what moved
+      data.jobs.forEach(j => {
+        const html = build(j);
+        if (html === lastCard[j.id]) return;
+        const node = el.querySelector(`[data-id="${j.id}"]`);
+        if (node) node.outerHTML = html; else el.innerHTML = data.jobs.map(build).join('');
+        lastCard[j.id] = html;
+      });
+    }
+  }
   const active = data.jobs.filter(j => j.status === 'running' || j.status === 'retrying').length;
   document.title = active ? `(${active}) Yoink` : 'Yoink';
   $('foot').textContent = `Downloads are kept for ${data.keep_days} day${data.keep_days == 1 ? '' : 's'} · ${mb(data.disk_used)} used`;

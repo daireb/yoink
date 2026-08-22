@@ -56,6 +56,7 @@ BITRATES = (320, 192, 128)
 
 LOG_DIR = DATA_DIR / "logs"
 PREFLIGHT_DIR = DATA_DIR / "preflight"
+COVER_DIR = DATA_DIR / "covers"
 DB_PATH = DATA_DIR / "yoink.db"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\r")
@@ -103,7 +104,8 @@ COLUMNS = {
     "expected": "TEXT",   # JSON: ordered list of {pos,name,artists,duration,url,id}
     "missing": "TEXT",    # JSON: subset of expected not found on disk
     "parent_id": "TEXT",  # set on retry jobs; hidden from the list
-    "cover": "TEXT",      # album/playlist/video artwork URL for the card
+    "cover": "TEXT",      # remote artwork URL (fallback when nothing is embedded)
+    "current": "TEXT",    # track being downloaded right now
 }
 
 
@@ -114,7 +116,7 @@ def db() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    for d in (LOG_DIR, PREFLIGHT_DIR, DOWNLOAD_DIR):
+    for d in (LOG_DIR, PREFLIGHT_DIR, COVER_DIR, DOWNLOAD_DIR):
         d.mkdir(parents=True, exist_ok=True)
     with db() as conn:
         cols = ", ".join(f"{k} {v}" for k, v in COLUMNS.items())
@@ -310,6 +312,57 @@ def finalize_job_dir(job_id: str, expected: list[dict], numbered: bool, job_dir:
     return missing
 
 
+def embedded_cover(path: Path) -> Optional[tuple[bytes, str]]:
+    """Pull cover art out of an audio file. We embed it on every download, so
+    this works offline and never depends on a CDN URL staying alive."""
+    try:
+        import mutagen
+        f = mutagen.File(path)
+        if f is None:
+            return None
+        tags = f.tags
+        for key in (tags or {}):                       # MP3 (ID3 APIC)
+            if str(key).startswith("APIC"):
+                pic = tags[key]
+                return pic.data, getattr(pic, "mime", "image/jpeg")
+        if tags and "covr" in tags and tags["covr"]:    # MP4 / M4A
+            art = tags["covr"][0]
+            return bytes(art), "image/png" if getattr(art, "imageformat", None) == 14 else "image/jpeg"
+        for pic in (getattr(f, "pictures", None) or []):  # FLAC
+            return pic.data, pic.mime or "image/jpeg"
+        import base64                                   # Ogg/Opus
+        for key in ("metadata_block_picture", "METADATA_BLOCK_PICTURE"):
+            if tags and key in tags:
+                from mutagen.flac import Picture
+                pic = Picture(base64.b64decode(tags[key][0]))
+                return pic.data, pic.mime or "image/jpeg"
+    except Exception:  # noqa: BLE001 - artwork is decoration; never fail a request
+        return None
+    return None
+
+
+def cached_cover(job_id: str, job_dir: Path) -> Optional[Path]:
+    """Extracted artwork, cached in /data on first request so the user's
+    download folder stays clean."""
+    for ext in (".jpg", ".png"):
+        p = COVER_DIR / f"{job_id}{ext}"
+        if p.is_file():
+            return p
+    files = list_audio_files(job_dir)
+    if not files:
+        return None
+    got = embedded_cover(files[0])
+    if not got:
+        return None
+    data, mime = got
+    out = COVER_DIR / f"{job_id}{'.png' if 'png' in (mime or '') else '.jpg'}"
+    try:
+        out.write_bytes(data)
+    except OSError:
+        return None
+    return out
+
+
 # ------------------------------------------------------------- command builder
 
 def spotdl_download_cmd(spotdl_file: Path, fmt: str, bitrate: int, job_dir: Path) -> list[str]:
@@ -340,6 +393,8 @@ def ytdlp_download_cmd(url: str, fmt: str, bitrate: int, job_dir: Path, is_playl
 # ------------------------------------------------------------ progress parsing
 
 SPOTDL_COMPLETE_RE = re.compile(r"^(\d+)/(\d+) complete")
+SPOTDL_STAGE_RE = re.compile(r"^(?P<song>.+?): (?P<stage>Downloading|Converting|Embedding metadata|Done|Skipped|Error)$")
+YTDLP_DEST_RE = re.compile(r"\[download\] Destination: (.+)")
 YTDLP_ITEM_RE = re.compile(r"\[download\] Downloading item (\d+) of (\d+)")
 YTDLP_DONE_RE = re.compile(r"\[ExtractAudio\] Destination:")
 YTDLP_FINISHED_RE = re.compile(r"\[download\] 100% of .+ in |has already been downloaded")
@@ -353,11 +408,18 @@ def parse_progress(kind: str, line: str, state: dict) -> None:
             state["extracted"] = state.get("extracted", 0) + 1
         if YTDLP_FINISHED_RE.search(line):
             state["finished"] = state.get("finished", 0) + 1
+        if m := YTDLP_DEST_RE.search(line):
+            state["current"] = Path(m.group(1)).stem
         state["done"] = max(state.get("extracted", 0), state.get("finished", 0))
     else:
         if m := SPOTDL_COMPLETE_RE.match(line):
             state["done"] = int(m.group(1))
             state["total"] = max(int(m.group(2)), state.get("total") or 0)
+        if m := SPOTDL_STAGE_RE.match(line):
+            if m.group("stage") == "Downloading":
+                state["current"] = m.group("song")
+            elif state.get("current") == m.group("song"):
+                state["current"] = None
 
 
 # ------------------------------------------------------------------ the worker
@@ -367,8 +429,10 @@ def run_step(handle: JobHandle, cmd: list[str], log, cwd: Path, kind: str, state
     """Run one subprocess, streaming output to the log; returns exit code."""
     log.write("$ " + " ".join(cmd[:6]) + (" ..." if len(cmd) > 6 else "") + "\n")
     log.flush()
+    # COLUMNS stops rich wrapping song names across lines (breaks parsing, reads badly)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1, cwd=str(cwd), start_new_session=True)
+                            text=True, bufsize=1, cwd=str(cwd), start_new_session=True,
+                            env={**os.environ, "COLUMNS": "200"})
     handle.proc = proc
     last_output = [time.time()]
 
@@ -431,7 +495,8 @@ def run_job(row: sqlite3.Row) -> None:
         return
 
     def progress():
-        update_job(job_id, done=state.get("done", 0), total=state.get("total"))
+        update_job(job_id, done=state.get("done", 0), total=state.get("total"),
+                   current=state.get("current"))
 
     try:
         with open(log_path, "a", encoding="utf-8") as log:
@@ -497,7 +562,7 @@ def run_job(row: sqlite3.Row) -> None:
             elif missing or (not target_expected and code != 0):
                 status = "done_with_errors"
                 error = f"{len(missing)} of {len(target_expected)} tracks couldn't be found" if missing else f"exit code {code}"
-            update_job(target_id, status=status, error=error, step=None, finished=time.time(),
+            update_job(target_id, status=status, error=error, step=None, finished=time.time(), current=None,
                        done=len(target_expected) - len(missing) if target_expected else len(files),
                        total=len(target_expected) or state.get("total"),
                        missing=json.dumps(missing) if missing else None)
@@ -508,17 +573,17 @@ def run_job(row: sqlite3.Row) -> None:
     except _Stop:
         target_id = row["parent_id"] or job_id
         if state.get("stalled"):
-            update_job(target_id, status="error", step=None, finished=time.time(),
+            update_job(target_id, status="error", step=None, finished=time.time(), current=None,
                        error=f"stalled: no output for {STALL_TIMEOUT}s, stopped")
         else:
-            update_job(target_id, status="cancelled", step=None, finished=time.time())
+            update_job(target_id, status="cancelled", step=None, finished=time.time(), current=None)
         if row["parent_id"]:
             with db() as conn:
                 conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
     except Exception as exc:  # noqa: BLE001 - a job must record any failure
         target_id = row["parent_id"] or job_id
         msg = str(exc) if isinstance(exc, RuntimeError) else f"{type(exc).__name__}: {exc}"
-        update_job(target_id, status="error", step=None, error=msg, finished=time.time())
+        update_job(target_id, status="error", step=None, error=msg, finished=time.time(), current=None)
         if row["parent_id"]:
             with db() as conn:
                 conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
@@ -607,6 +672,8 @@ def remove_job_files(row: sqlite3.Row) -> None:
     if str(job_dir).startswith(str(DOWNLOAD_DIR.resolve()) + os.sep):
         shutil.rmtree(job_dir, ignore_errors=True)
     (LOG_DIR / f"{row['id']}.log").unlink(missing_ok=True)
+    for ext in (".jpg", ".png"):
+        (COVER_DIR / f"{row['id']}{ext}").unlink(missing_ok=True)
 
 
 def retention_loop() -> None:
@@ -888,12 +955,14 @@ async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
 
 def public_job(r: sqlite3.Row, with_files: bool = False) -> dict:
     d = {k: r[k] for k in ("id", "created", "finished", "kind", "title", "format", "bitrate",
-                           "numbered", "status", "step", "total", "done", "error", "cover")}
+                           "numbered", "status", "step", "total", "done", "error", "current")}
     # the original link/query, so the UI can offer "Try again" (not for CSV jobs: that's a URL list)
     d["input"] = r["input"] if r["kind"] in ("spotify", "media", "search") else None
     job_dir = Path(r["dir"])
     files = list_audio_files(job_dir) if r["status"] != "queued" else []
     d["files_count"] = len(files)
+    # prefer artwork we own — extracted from the audio, so no CDN dependency
+    d["cover"] = f"/api/jobs/{r['id']}/cover" if files else (r["cover"] or None)
     d["first_file"] = files[0].name if files else None  # for the preview button
     d["size_bytes"] = sum(f.stat().st_size for f in files)
     d["missing"] = [(f"{', '.join(t['artists'])} - {t['name']}" if t.get("artists") else t["name"])
@@ -1053,6 +1122,21 @@ def download_file(job_id: str, name: str, request: Request, t: Optional[str] = N
         "Accept-Ranges": "bytes",
         "Content-Disposition": f'inline; filename="{p.name}"',
     })
+
+
+@app.get("/api/jobs/{job_id}/cover")
+def job_cover(job_id: str):
+    row = job_row(job_id)
+    if not row:
+        raise HTTPException(404, "no such job")
+    p = cached_cover(job_id, Path(row["dir"]))
+    if p is not None:
+        return FileResponse(p, media_type="image/png" if p.suffix == ".png" else "image/jpeg",
+                            headers={"Cache-Control": "public, max-age=86400"})
+    if row["cover"]:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(row["cover"])   # fall back to remote artwork
+    raise HTTPException(404, "no artwork")
 
 
 @app.get("/api/jobs/{job_id}/zip")
