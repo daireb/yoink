@@ -468,26 +468,45 @@ function paintPlayState() {
 }
 
 // ---- details modal --------------------------------------------------------------
-async function openDetails(id) { detailsId = id; $('details').classList.add('show'); await renderDetails(); }
-function closeDetails() { detailsId = null; $('details').classList.remove('show'); }
-async function renderDetails() {
-  if (!detailsId) return;
-  let d; try { d = await (await api('/api/jobs/' + detailsId)).json(); } catch { return; }
-  if (!detailsId) return;
+// Opens instantly from the cached list row; only files + log arrive by fetch.
+function metaHtml(d) {
   const [, srcLabel] = SRC[d.kind] || ['', d.kind];
   const requested = d.input
     ? (/^https?:\/\//.test(d.input) ? `<a href="${esc(d.input)}" target="_blank" rel="noopener">${esc(d.input)}</a>` : `“${esc(d.input)}”`)
     : (d.kind === 'csv' ? `Exportify CSV · ${esc(d.title)}.csv` : '—');
-  $('dTitle').textContent = d.title;
-  $('dMeta').innerHTML = `<dt>Requested</dt><dd>${requested}</dd>
+  const when = ({ cancelled: 'Cancelled at', error: 'Failed at', interrupted: 'Interrupted at' })[d.status] || 'Completed at';
+  return `<dt>Requested</dt><dd>${requested}</dd>
     <dt>Source</dt><dd>${esc(srcLabel)}</dd>
     <dt>Format</dt><dd>${esc(d.format.toUpperCase())} · ${d.bitrate} kbps${d.numbered ? ' · numbered' : ''}</dd>
     <dt>Requested at</dt><dd>${new Date(d.created * 1000).toLocaleString()}</dd>
-    ${d.finished ? `<dt>${({ cancelled: 'Cancelled at', error: 'Failed at', interrupted: 'Interrupted at' })[d.status] || 'Completed at'}</dt><dd>${new Date(d.finished * 1000).toLocaleString()}</dd>` : ''}
+    ${d.finished ? `<dt>${when}</dt><dd>${new Date(d.finished * 1000).toLocaleString()}</dd>` : ''}
     ${d.keep_until ? `<dt>Kept until</dt><dd>${new Date(d.keep_until * 1000).toLocaleString()}</dd>` : ''}`;
-  $('dFiles').innerHTML = d.files.map(f => `<div class="file"><span class="name"><button class="fplay" data-play="${esc(fileUrl(d.id, f.name))}" aria-label="Preview" onclick='toggle("${d.id}",${JSON.stringify(f.name)})'>${icon('i-play')}</button><a href="${fileUrl(d.id, f.name)}">${esc(f.name)}</a></span><span class="size">${mb(f.size)}</span></div>`).join('');
-  paintPlayState();
-  $('dLog').textContent = d.log || '(no output yet)';
+}
+async function openDetails(id) {
+  detailsId = id;
+  const j = JOBS[id];
+  if (j) {
+    $('dTitle').textContent = j.title;
+    $('dMeta').innerHTML = metaHtml(j);
+    $('dFiles').innerHTML = j.files_count ? `<div class="sub"><span class="spin"></span>Loading files…</div>` : '';
+    $('dLog').textContent = ''; $('dLog').style.display = 'none';
+  }
+  $('details').classList.add('show');
+  await renderDetails();
+}
+function closeDetails() { detailsId = null; $('details').classList.remove('show'); }
+async function renderDetails() {
+  if (!detailsId) return;
+  const id = detailsId;
+  let d; try { d = await (await api('/api/jobs/' + id)).json(); } catch { return; }
+  if (detailsId !== id) return;
+  $('dTitle').textContent = d.title;
+  $('dMeta').innerHTML = metaHtml(d);
+  const files = d.files.map(f => `<div class="file"><span class="name"><button class="fplay" data-play="${esc(fileUrl(d.id, f.name))}" aria-label="Preview" onclick='toggle("${d.id}",${JSON.stringify(f.name)})'>${icon('i-play')}</button><a href="${fileUrl(d.id, f.name)}">${esc(f.name)}</a></span><span class="size">${mb(f.size)}</span></div>`).join('');
+  if ($('dFiles').innerHTML !== files) { $('dFiles').innerHTML = files; paintPlayState(); }
+  const log = d.log || '(no output yet)';
+  if ($('dLog').textContent !== log) $('dLog').textContent = log;
+  $('dLog').style.display = '';
 }
 
 // ---- polling ---------------------------------------------------------------------
