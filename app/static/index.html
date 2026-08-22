@@ -207,6 +207,8 @@
   .check { display: flex; align-items: center; gap: 9px; font-size: 14.5px; }
   .check input { width: 16px; height: 16px; accent-color: var(--accent2); }
   .help { color: var(--dim); font-size: 12.5px; margin: 4px 0 0 25px; }
+  .help.versions { margin: 14px 0 0; white-space: pre-line; font-family: var(--mono); font-size: 12px; }
+  .help.versions.warn { color: var(--warn); }
   #loginErr { color: var(--err); font-size: 13px; min-height: 18px; }
   .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: rot .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
   .go .spin { border-color: rgba(255,255,255,.35); border-top-color: #fff; margin: 0; }
@@ -268,6 +270,7 @@
       <div class="help">Names files 01 -, 02 -, … so simple players (swim headphones, car USB) keep the order.</div>
     </div>
   </div>
+  <div class="help versions" id="versions"></div>
   <div class="btns"><button onclick="closeOptions()">Done</button></div>
 </div></div>
 
@@ -803,6 +806,23 @@ async function renderDetails() {
 
 // ---- polling ---------------------------------------------------------------------
 let seq = 0;
+// Engine versions live in the options sheet. yt-dlp versions are dates, so an
+// old one is a reliable "YouTube has probably broken this image" signal.
+function paintVersions(v) {
+  const el = $('versions'); if (!el || !v) return;
+  const parts = [];
+  if (v.yt_dlp) parts.push('yt-dlp ' + v.yt_dlp);
+  if (v.spotdl) parts.push('spotDL ' + v.spotdl);
+  let warn = '';
+  const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})/.exec(v.yt_dlp || '');
+  if (m) {
+    const age = Math.floor((Date.now() - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 86400000);
+    if (age > 45) warn = `yt-dlp is ${age} days old — YouTube downloads may start failing. Rebuild the image to update it.`;
+  }
+  el.textContent = warn ? `${parts.join(' · ')}\n${warn}` : parts.join(' · ');
+  el.classList.toggle('warn', !!warn);
+}
+
 async function refresh() {
   const my = ++seq;
   let data;
@@ -814,6 +834,7 @@ async function refresh() {
   const active = data.jobs.filter(j => j.status === 'running' || j.status === 'retrying').length;
   document.title = active ? `(${active}) Yoink` : 'Yoink';
   $('foot').textContent = `Downloads are kept for ${data.keep_days} day${data.keep_days == 1 ? '' : 's'} · ${mb(data.disk_used)} used`;
+  paintVersions(data.versions);
   if (detailsId && JOBS[detailsId] && ['running', 'retrying', 'queued'].includes(JOBS[detailsId].status)) renderDetails();
 }
 

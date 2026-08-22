@@ -10,12 +10,14 @@ RUN apt-get update \
 
 # Deno: the JS runtime yt-dlp uses to solve YouTube's JS challenges. Without
 # one, yt-dlp falls back to limited clients and some videos become unavailable.
+# Pinned so builds are reproducible; bump deliberately.
+ARG DENO_VERSION=2.9.5
 RUN arch=$(uname -m) \
     && case "$arch" in \
          aarch64) target=aarch64-unknown-linux-gnu ;; \
          x86_64)  target=x86_64-unknown-linux-gnu ;; \
        esac \
-    && curl -fsSL -o /tmp/deno.zip "https://github.com/denoland/deno/releases/latest/download/deno-${target}.zip" \
+    && curl -fsSL -o /tmp/deno.zip "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-${target}.zip" \
     && unzip -q /tmp/deno.zip -d /usr/local/bin \
     && rm /tmp/deno.zip \
     && deno --version
@@ -25,6 +27,13 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
+
+# yt-dlp goes stale fast (YouTube changes break old releases within weeks) and
+# the read-only rootfs means it can't self-update. This layer is the only one
+# that needs refreshing: build with a new YTDLP_REFRESH value to bust just it.
+#   YTDLP_REFRESH=$(date +%s) docker compose build && docker compose up -d
+ARG YTDLP_REFRESH=0
+RUN echo "yt-dlp refresh ${YTDLP_REFRESH}" && pip install --no-cache-dir --upgrade yt-dlp
 
 # spotdl 4.5.2 hardcodes a German-locale YTMusic client; ytmusicapi 1.12.2's
 # "de" parsing currently returns ZERO results for every search, so all Spotify
@@ -66,4 +75,9 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/api/health >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --proxy-headers: trust X-Forwarded-Proto/For from whatever fronts the
+# container (cloudflared, a NAS reverse proxy) so cookies get the Secure flag
+# on HTTPS. Nothing security-relevant keys off the client IP, so allowing any
+# proxy source is harmless.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

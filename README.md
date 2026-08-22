@@ -50,6 +50,7 @@ or per file from the details view. Everything is kept for `YOINK_KEEP_DAYS`
 | `YOINK_THREADS` | `4` | parallel downloads within a job |
 | `YOINK_KEEP_DAYS` | `7` | how long finished downloads are kept |
 | `YOINK_SECRET` | auto-generated, persisted in `/data` | cookie-signing secret override |
+| `YOINK_PREFLIGHT_TIMEOUT` | `80` | seconds a link lookup may take before giving up (keep under your proxy's origin timeout) |
 
 ## Exposing it (NAS / Cloudflare)
 
@@ -58,6 +59,27 @@ The compose file binds to `127.0.0.1` only. To serve your LAN or the world:
 1. Change the port mapping to `"8080:8080"`.
 2. Set `YOINK_PASSWORD`.
 3. Put Cloudflare Tunnel + Access (or Tailscale) in front. Don't port-forward raw.
+
+uvicorn runs with `--proxy-headers`, so behind an HTTPS proxy the session and
+download cookies get the `Secure` flag automatically; on plain LAN HTTP they
+still work. Link lookups are capped at `YOINK_PREFLIGHT_TIMEOUT` (80 s) so a
+slow Spotify day produces an honest "try again" instead of a Cloudflare 524.
+
+## Keeping it working
+
+yt-dlp is what breaks. YouTube changes something every few weeks and old
+yt-dlp releases stop working; the container's read-only filesystem means it
+can't update itself. The fix is a rebuild, and the Dockerfile is arranged so
+only the yt-dlp layer is redone:
+
+```bash
+YTDLP_REFRESH=$(date +%s) docker compose build && docker compose up -d
+```
+
+Put that in a weekly cron on the NAS. **Options** in the UI shows the
+yt-dlp and spotDL versions and warns when yt-dlp is more than 45 days old.
+
+Container logs are capped (3 × 10 MB) in the compose file.
 
 The container is sandboxed regardless: non-root, all capabilities dropped,
 `no-new-privileges`, read-only root filesystem, tmpfs `/tmp`.

@@ -48,6 +48,9 @@ SPOTDL_THREADS = os.environ.get("YOINK_THREADS", "4")
 KEEP_DAYS = float(os.environ.get("YOINK_KEEP_DAYS", "7"))
 # kill a job step if its process produces no output for this long (seconds)
 STALL_TIMEOUT = int(os.environ.get("YOINK_STALL_TIMEOUT", "1800"))
+# Whole-request cap for /api/preflight. Cloudflare (and most proxies) give an
+# origin ~100s before returning 524, so stay under that and fail honestly.
+PREFLIGHT_TIMEOUT = int(os.environ.get("YOINK_PREFLIGHT_TIMEOUT", "80"))
 MAX_CSV_ROWS = 1000
 MAX_CSV_BYTES = 5 * 1024 * 1024
 AUDIO_EXTS = {".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"}
@@ -645,11 +648,11 @@ class _Stop(Exception):
     pass
 
 
-def probe_media(url: str) -> dict:
+def probe_media(url: str, timeout: float = 120) -> dict:
     """yt-dlp metadata probe: title + entries, no download."""
     is_playlist = "list=" in url or "/playlist" in url
     cmd = ["yt-dlp", "-J", "--no-warnings", "--flat-playlist" if is_playlist else "--no-playlist", url]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if out.returncode != 0 or not out.stdout.strip():
         raise RuntimeError("couldn't read that link")
     info = json.loads(out.stdout)
@@ -792,7 +795,7 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "auth_required": bool(PASSWORD)}
+    return {"ok": True, "auth_required": bool(PASSWORD), "versions": TOOL_VERSIONS}
 
 
 @app.post("/api/login")
@@ -808,7 +811,7 @@ async def login(request: Request, response: Response):
             await asyncio.sleep(min(len(_login_failures), 5))
             raise HTTPException(403, "wrong password")
     response.set_cookie(COOKIE, session_token(), httponly=True, samesite="lax",
-                        max_age=60 * 60 * 24 * 30)
+                        max_age=60 * 60 * 24 * 30, secure=https(request))
     return {"ok": True}
 
 
@@ -889,7 +892,9 @@ async def _preflight(request: Request):
     if kind == "media":
         await asyncio.to_thread(assert_public_url, text)
         try:
-            info = await asyncio.to_thread(probe_media, text)
+            info = await asyncio.to_thread(probe_media, text, PREFLIGHT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(504, "that site is slow to answer — try again in a minute")
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(400, str(exc) or "couldn't read that link")
         return {"kind": kind, "token": None, "title": info["title"], "count": len(info["tracks"]),
@@ -898,12 +903,19 @@ async def _preflight(request: Request):
     token = uuid.uuid4().hex[:16]
     out = PREFLIGHT_DIR / f"{token}.spotdl"
     cmd = ["spotdl", "save", text, "--save-file", str(out), *SPOTDL_FLAGS]
+    deadline = time.monotonic() + PREFLIGHT_TIMEOUT
+    slow = HTTPException(504, "Spotify is slow to answer right now — try again in a minute")
     for attempt in range(2):  # Spotify sometimes refuses the session page briefly; try twice
+        left = deadline - time.monotonic()
+        if left < 5:
+            out.unlink(missing_ok=True)
+            raise slow
         try:
             res = await asyncio.to_thread(
-                subprocess.run, cmd, capture_output=True, text=True, timeout=300, cwd=str(PREFLIGHT_DIR))
+                subprocess.run, cmd, capture_output=True, text=True, timeout=left, cwd=str(PREFLIGHT_DIR))
         except subprocess.TimeoutExpired:
-            raise HTTPException(504, "Spotify lookup timed out")
+            out.unlink(missing_ok=True)
+            raise slow
         if res.returncode == 0 and out.is_file():
             short, got, declared = is_truncated(out)
             if not short:
@@ -912,7 +924,7 @@ async def _preflight(request: Request):
                 out.unlink(missing_ok=True)
                 raise HTTPException(503, f"Spotify only returned {got} of {declared} tracks (it's rate-limiting) — try again in a minute")
         if attempt == 0:
-            await asyncio.sleep(4)
+            await asyncio.sleep(min(4, max(0, deadline - time.monotonic() - 5)))
     else:
         raise HTTPException(400, "Spotify isn't answering right now — try again in a moment"
                             if "session" in (res.stdout + res.stderr).lower() else "couldn't find that on Spotify")
@@ -1040,7 +1052,7 @@ def jobs():
         rows = conn.execute(
             "SELECT * FROM jobs WHERE parent_id IS NULL ORDER BY created DESC LIMIT 200").fetchall()
     return {"jobs": [public_job(r) for r in rows], "auth_required": bool(PASSWORD),
-            "keep_days": KEEP_DAYS, "disk_used": disk_used()}
+            "keep_days": KEEP_DAYS, "disk_used": disk_used(), "versions": TOOL_VERSIONS}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -1129,11 +1141,18 @@ def remove(job_id: str, files: int = 1):
     return {"ok": True}
 
 
-def started_cookie(resp, t: Optional[str]):
+def https(request: Request) -> bool:
+    """True when the client is on HTTPS. uvicorn runs with --proxy-headers, so
+    this honours X-Forwarded-Proto from a tunnel/reverse proxy; on plain LAN
+    HTTP it stays False and cookies are still set."""
+    return request.url.scheme == "https"
+
+
+def started_cookie(resp, t: Optional[str], request: Request):
     """Download-started handshake: the page polls for this cookie to know the
     browser has begun receiving the file (used to end the 'Preparing…' state)."""
     if t and re.fullmatch(r"[a-z0-9]{8,32}", t):
-        resp.set_cookie("yoink_dl", t, max_age=60, samesite="lax", path="/")
+        resp.set_cookie("yoink_dl", t, max_age=60, samesite="lax", path="/", secure=https(request))
     return resp
 
 
@@ -1159,7 +1178,7 @@ def download_file(job_id: str, name: str, request: Request, t: Optional[str] = N
     m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng or "")
     if not m:
         return started_cookie(FileResponse(p, media_type=media_type, filename=p.name,
-                                           headers={"Accept-Ranges": "bytes"}), t)
+                                           headers={"Accept-Ranges": "bytes"}), t, request)
     # byte ranges: needed for seeking, and iOS Safari won't play audio without them
     start = int(m.group(1)) if m.group(1) else max(0, size - int(m.group(2) or 0))
     end = int(m.group(2)) if m.group(1) and m.group(2) else size - 1
@@ -1202,7 +1221,7 @@ def job_cover(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/zip")
-def download_zip(job_id: str, t: Optional[str] = None):
+def download_zip(job_id: str, request: Request, t: Optional[str] = None):
     row = job_row(job_id)
     if not row:
         raise HTTPException(404, "no such job")
@@ -1217,7 +1236,7 @@ def download_zip(job_id: str, t: Optional[str] = None):
         for f in members:
             z.write(f, f.name)
     return started_cookie(FileResponse(zpath, filename=f"{slugify(row['title'])}.zip",
-                                       background=BackgroundTask(zpath.unlink, missing_ok=True)), t)
+                                       background=BackgroundTask(zpath.unlink, missing_ok=True)), t, request)
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -1269,6 +1288,27 @@ if not os.access(DOWNLOAD_DIR, os.W_OK):
           "mounted downloads folder to uid 10001. Downloads WILL fail until fixed.", flush=True)
 # Two lanes, one job each: a pasted song never waits behind a playlist, and
 # there are never more than two download processes hitting YouTube.
+def tool_versions() -> dict:
+    """Versions of the engines we shell out to. yt-dlp's is a date, which the
+    UI uses to warn when the image is old enough that YouTube may have broken it."""
+    import importlib.metadata as md
+    v: dict[str, Optional[str]] = {}
+    for key, dist in (("yt_dlp", "yt-dlp"), ("spotdl", "spotdl")):
+        try:
+            v[key] = md.version(dist)
+        except md.PackageNotFoundError:
+            v[key] = None
+    try:
+        out = subprocess.run(["deno", "--version"], capture_output=True, text=True, timeout=10).stdout
+        m = re.search(r"deno (\S+)", out)
+        v["deno"] = m.group(1) if m else None
+    except Exception:  # noqa: BLE001
+        v["deno"] = None
+    return v
+
+
+TOOL_VERSIONS = tool_versions()
+
 threading.Thread(target=worker_loop, args=("bulk",), daemon=True, name="yoink-worker-bulk").start()
 threading.Thread(target=worker_loop, args=("quick",), daemon=True, name="yoink-worker-quick").start()
 threading.Thread(target=retention_loop, daemon=True, name="yoink-retention").start()

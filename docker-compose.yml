@@ -8,7 +8,12 @@
 
 services:
   yoink:
-    build: .
+    build:
+      context: .
+      args:
+        # Bump (e.g. YTDLP_REFRESH=$(date +%s)) to pull the newest yt-dlp
+        # without rebuilding everything. See README "Keeping it working".
+        YTDLP_REFRESH: ${YTDLP_REFRESH:-0}
     image: yoink:latest
     container_name: yoink
     restart: unless-stopped
@@ -37,6 +42,13 @@ services:
 
     tmpfs:
       - /tmp:mode=1777,size=512m
+
+    # Docker's default json-file log is unbounded; spotdl is chatty.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   yoink-data:
