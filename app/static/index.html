@@ -381,7 +381,7 @@ function card(j, d) {
   return `<div class="card job">
     <div class="job-head"><div class="job-title">${esc(j.title)}</div>${
       /^https?:\/\//.test(j.input || '')
-        ? `<a class="src" href="${esc(j.input)}" target="_blank" rel="noopener" title="Open on ${j.kind === 'spotify' ? 'Spotify' : 'the source site'}">${icon(srcIcon)}</a>`
+        ? `<a class="src" href="${esc(j.input)}" target="_blank" rel="noopener" title="Open on ${j.kind === 'spotify' ? 'Spotify' : /youtu\.?be/.test(j.input) ? 'YouTube' : 'the source site'}">${icon(srcIcon)}</a>`
         : `<span class="src" title="${srcLabel}">${icon(srcIcon)}</span>`}</div>
     <div class="state ${cls}">${line}</div>
     ${bar}${missing}
