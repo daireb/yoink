@@ -76,9 +76,20 @@
   .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .coverwrap > svg.i { width: 26px; height: 26px; }
   .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
-          background: rgba(15,17,23,.62); color: #fff; border: 1px solid rgba(255,255,255,.25); opacity: .55; transition: opacity .15s, transform .15s; backdrop-filter: blur(3px); }
+          background: rgba(15,17,23,.7); color: #fff; border: 1px solid rgba(255,255,255,.25); transition: opacity .15s, transform .15s; backdrop-filter: blur(3px); }
   .play svg.i { width: 18px; height: 18px; }
-  .coverwrap:hover .play, .play.on { opacity: 1; transform: scale(1.06); }
+  /* pointer devices: art stays clean until you hover (the Spotify/Apple convention) */
+  @media (hover: hover) {
+    .play { opacity: 0; }
+    .coverwrap:hover .play, .play.on { opacity: 1; }
+    .coverwrap:hover .play { transform: scale(1.06); }
+  }
+  /* touch devices: no hover exists, so keep a small persistent control */
+  @media (hover: none) {
+    .play { opacity: .85; width: 32px; height: 32px; }
+    .play svg.i { width: 15px; height: 15px; }
+    .coverwrap:has(.play) > svg.i { display: none; }
+  }
   .file .fplay { background: none; border: 0; color: var(--dim); padding: 0 6px 0 0; display: inline-flex; cursor: pointer; }
   .file .fplay:hover, .file .fplay.on { color: var(--accent); filter: none; }
   .file .fplay svg.i { width: 16px; height: 16px; }
@@ -97,7 +108,7 @@
   .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
   .actions .spacer { flex: 1; }
   .actions .ibtn:last-child { margin-right: -7px; }
-  @media (max-width: 480px) { .coverwrap { width: 84px; } .body { padding: 14px; } .play { opacity: .8; } }
+  @media (max-width: 480px) { .coverwrap { width: 84px; } .body { padding: 14px; } }
   .missing { margin-top: 10px; font-size: 13.5px; }
   .missing ul { margin: 6px 0 0 18px; color: var(--dim); }
 
