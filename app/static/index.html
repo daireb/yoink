@@ -57,7 +57,7 @@
 
   .card { background: linear-gradient(180deg, #181b25, #151822); border: 1px solid rgba(42,47,64,.85); border-radius: var(--radius); }
   .job.enter { animation: rise .32s cubic-bezier(.2,.7,.2,1) both; }
-  .job.leave { animation: fall .22s ease-in both; pointer-events: none; }
+  .job.leave { animation: fall .26s ease-in both; pointer-events: none; z-index: 3; }
   @keyframes fall { to { opacity: 0; transform: translateY(4px) scale(.985); } }
   .state { transition: color .35s ease; }
   .state .txt.swap { animation: swapIn .2s ease; }
@@ -101,7 +101,7 @@
   .linkish { background: none; border: 0; color: var(--accent); padding: 0; font-size: inherit; font-weight: 500; cursor: pointer; }
   .linkish:hover { text-decoration: underline; filter: none; }
 
-  .jobs { margin-top: 24px; }
+  .jobs { margin-top: 24px; position: relative; }   /* anchors a leaving card in place */
   .job { padding: 0; margin-bottom: 12px; display: flex; align-items: stretch; overflow: hidden; transition: border-color .15s; position: relative; }
   .job:hover { border-color: #363c52; }
   .coverwrap { width: 112px; flex-shrink: 0; align-self: stretch; position: relative; background: var(--panel2); border-right: 1px solid var(--line); display: grid; place-items: center; color: var(--dim); }
@@ -656,31 +656,75 @@ $('jobs').addEventListener('click', e => {
   }
 });
 
-// reconcile the list: create, patch, reorder, and animate out what's gone
+// reconcile the list: create, patch, reorder, and animate what leaves
 const nodes = new Map();
 let firstRender = true;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+// a removed card is lifted out of the flow where it stands, so the gap closes
+// behind it and it never jumps to the end of the list
+function detach(node, host) {
+  const r = node.getBoundingClientRect(), h = host.getBoundingClientRect();
+  node.style.position = 'absolute';
+  node.style.top = (r.top - h.top) + 'px';
+  node.style.left = (r.left - h.left) + 'px';
+  node.style.width = r.width + 'px';
+  node.classList.add('leave');
+  const done = () => node.remove();
+  node.addEventListener('animationend', done, { once: true });
+  setTimeout(done, 500);
+}
+
 function render(jobs) {
   const el = $('jobs');
-  let empty = el.querySelector('.empty');
   if (!jobs.length) {
-    if (!empty) { el.innerHTML = `<div class="empty">Paste a Spotify or YouTube link above to get started.<br>Private playlist or Liked Songs? Use <b>Import private playlist</b>.</div>`; nodes.clear(); }
+    if (!el.querySelector('.empty')) {
+      el.innerHTML = `<div class="empty">Paste a Spotify or YouTube link above to get started.<br>Private playlist or Liked Songs? Use <b>Import private playlist</b>.</div>`;
+      nodes.clear();
+    }
     return;
   }
-  if (empty) empty.remove();
+  const emptyMsg = el.querySelector('.empty'); if (emptyMsg) emptyMsg.remove();
+
+  // FIRST: where every surviving card sits right now
+  const before = new Map();
+  if (!reduceMotion.matches) for (const [id, n] of nodes) before.set(id, n.getBoundingClientRect().top);
+
   const live = new Set(jobs.map(j => j.id));
   for (const [id, node] of nodes) {
-    if (live.has(id) || node.classList.contains('leave')) continue;
-    node.classList.add('leave'); nodes.delete(id);
-    const done = () => node.remove();
-    node.addEventListener('animationend', done, { once: true }); setTimeout(done, 400);
+    if (live.has(id)) continue;
+    nodes.delete(id); before.delete(id); detach(node, el);
   }
+
+  // create / update / order (leaving cards are absolute, so they're skipped)
+  const inFlow = [...el.children].filter(n => !n.classList.contains('leave'));
   jobs.forEach((j, i) => {
     let node = nodes.get(j.id);
     if (!node) { node = createCard(j.id); if (!firstRender) node.classList.add('enter'); nodes.set(j.id, node); }
     updateCard(node, j);
-    const at = el.children[i];
-    if (at !== node) el.insertBefore(node, at || null);
+    if (node.style.transform && !node.style.transition.includes('transform')) node.style.transform = '';
+    if (inFlow[i] !== node) {
+      el.insertBefore(node, inFlow[i] || null);
+      const from = inFlow.indexOf(node); if (from > -1) inFlow.splice(from, 1);
+      inFlow.splice(i, 0, node);
+    }
   });
+
+  // LAST + INVERT + PLAY: slide survivors from where they were to where they are
+  if (!reduceMotion.matches) {
+    for (const [id, node] of nodes) {
+      const was = before.get(id); if (was == null) continue;
+      const dy = was - node.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) continue;
+      // forced reflow rather than rAF: a backgrounded tab never runs rAF, which
+      // would leave the inverted transform stuck and the row displaced for good
+      node.style.transition = 'none';
+      node.style.transform = `translateY(${dy}px)`;
+      void node.offsetHeight;
+      node.style.transition = 'transform .3s cubic-bezier(.2,.7,.2,1)';
+      node.style.transform = '';
+    }
+  }
   firstRender = false;
   paintPlayState();
 }
