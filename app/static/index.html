@@ -410,9 +410,8 @@ function card(j, d) {
   const missing = (j.status === 'done_with_errors' && j.missing.length)
     ? `<div class="missing">Couldn't find:<ul>${j.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>` : '';
   const art = j.cover ? `<img class="cover" src="${esc(j.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
-  const src = j.first_file ? fileUrl(j.id, j.first_file) : null;
-  const playing = src && player.src.endsWith(src.replace(/^\//, '')) && !player.paused;
-  const play = ready && src ? `<button class="play ${playing ? 'on' : ''}" data-play="${esc(src)}" title="${playing ? 'Pause' : 'Preview'}" aria-label="Preview" onclick="toggle('${j.id}',${JSON.stringify(j.first_file).replace(/"/g, '&quot;')})">${icon(playing ? 'i-pause' : 'i-play')}</button>` : '';
+  const playing = jobPlaying(j.id);
+  const play = ready && j.first_file ? `<button class="play ${playing ? 'on' : ''}" data-job="${j.id}" title="${playing ? 'Pause' : 'Preview'}" aria-label="Preview" onclick="toggleJob('${j.id}',${JSON.stringify(j.first_file).replace(/"/g, '&quot;')})">${icon(playing ? 'i-pause' : 'i-play')}</button>` : '';
   return `<div class="card job"><div class="coverwrap">${icon(srcIcon)}${art}${play}</div><div class="body">
     <div class="job-head"><div class="job-title">${esc(j.title)}</div>${
       /^https?:\/\//.test(j.input || '')
@@ -429,28 +428,42 @@ function card(j, d) {
 const player = new Audio();
 player.preload = 'none';
 const fileUrl = (id, name) => `/api/jobs/${id}/files/${encodeURIComponent(name)}`;
-function toggle(id, name) {
+const currentPath = () => player.src ? decodeURIComponent(new URL(player.src).pathname) : null;
+const jobOwns = (id) => (currentPath() || '').startsWith(`/api/jobs/${id}/files/`);
+const jobPlaying = (id) => jobOwns(id) && !player.paused;
+function toggle(id, name) {           // a specific file (details modal)
   const url = fileUrl(id, name);
-  if (player.src.endsWith(url.replace(/^\//, '')) && !player.paused) player.pause();
+  if (currentPath() === decodeURIComponent(url) && !player.paused) player.pause();
+  else if (currentPath() === decodeURIComponent(url)) player.play().catch(() => {});
   else { player.src = url; player.play().catch(() => {}); }
+  paintPlayState();
+}
+function toggleJob(id, firstFile) {   // the artwork: pause/resume whatever of this job is loaded
+  if (jobOwns(id)) { player.paused ? player.play().catch(() => {}) : player.pause(); }
+  else { player.src = fileUrl(id, firstFile); player.play().catch(() => {}); }
   paintPlayState();
 }
 player.addEventListener('play', paintPlayState);
 player.addEventListener('pause', paintPlayState);
 player.addEventListener('ended', paintPlayState);
 function paintPlayState() {
-  const cur = player.src && !player.paused ? decodeURIComponent(new URL(player.src).pathname) : null;
-  document.querySelectorAll('[data-play]').forEach(b => {
+  const cur = !player.paused ? currentPath() : null;
+  document.querySelectorAll('[data-play]').forEach(b => {       // per-file buttons: exact file
     const on = cur && decodeURIComponent(b.dataset.play) === cur;
     b.classList.toggle('on', !!on);
     b.innerHTML = icon(on ? 'i-pause' : 'i-play');
-    if (b.classList.contains('play')) b.title = on ? 'Pause' : 'Preview';
+  });
+  document.querySelectorAll('[data-job]').forEach(b => {        // artwork: any file of the job
+    const on = cur && cur.startsWith(`/api/jobs/${b.dataset.job}/files/`);
+    b.classList.toggle('on', !!on);
+    b.innerHTML = icon(on ? 'i-pause' : 'i-play');
+    b.title = on ? 'Pause' : 'Preview';
   });
 }
 
 // ---- details modal --------------------------------------------------------------
 async function openDetails(id) { detailsId = id; $('details').classList.add('show'); await renderDetails(); }
-function closeDetails() { detailsId = null; $('details').classList.remove('show'); player.pause(); }
+function closeDetails() { detailsId = null; $('details').classList.remove('show'); }
 async function renderDetails() {
   if (!detailsId) return;
   let d; try { d = await (await api('/api/jobs/' + detailsId)).json(); } catch { return; }
