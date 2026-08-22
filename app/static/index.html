@@ -2,77 +2,98 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Reprise</title>
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reprise">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <style>
   :root {
     --bg: #0f1117; --panel: #171a23; --panel2: #1e2230; --line: #2a2f40;
     --text: #e6e9f2; --dim: #8b91a7; --accent: #7c8cff; --accent2: #5865f2;
-    --ok: #4ade80; --warn: #fbbf24; --err: #f87171; --radius: 12px;
+    --ok: #4ade80; --warn: #fbbf24; --err: #f87171; --radius: 14px;
   }
   * { box-sizing: border-box; margin: 0; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     background: var(--bg); color: var(--text); min-height: 100vh;
     font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: env(safe-area-inset-bottom);
   }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
-  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 28px; }
-  header h1 { font-size: 26px; letter-spacing: -0.5px; }
-  header h1 span { color: var(--accent); }
-  header p { color: var(--dim); font-size: 13px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 18px 60px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  header img { width: 34px; height: 34px; border-radius: 9px; }
+  header h1 { font-size: 24px; letter-spacing: -0.4px; }
+  header p { color: var(--dim); font-size: 13px; margin-left: auto; text-align: right; }
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 
-  .submit { padding: 18px; margin-bottom: 14px; }
+  .submit { padding: 16px; margin-bottom: 18px; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; }
-  .row input[type=text] { flex: 1 1 260px; }
+  .row input[type=text] { flex: 1 1 240px; }
   input[type=text], input[type=password], select {
     background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 8px; padding: 11px 14px; font-size: 15px; outline: none;
+    border-radius: 10px; padding: 12px 14px; font-size: 16px; outline: none; min-width: 0;
   }
-  input[type=text]:focus, input[type=password]:focus { border-color: var(--accent); }
-  input[type=text] { flex: 1; min-width: 0; }
+  input:focus, select:focus { border-color: var(--accent); }
   button {
-    background: var(--accent2); color: #fff; border: 0; border-radius: 8px;
-    padding: 11px 20px; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: var(--accent2); color: #fff; border: 0; border-radius: 10px;
+    padding: 12px 20px; font-size: 15px; font-weight: 600; cursor: pointer; white-space: nowrap;
   }
   button:hover { filter: brightness(1.1); }
-  button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 400; padding: 6px 12px; font-size: 13px; }
+  button:disabled { opacity: .5; cursor: default; filter: none; }
+  button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 500; padding: 7px 13px; font-size: 13px; }
   button.ghost:hover { color: var(--text); border-color: var(--dim); filter: none; }
-  .hint { color: var(--dim); font-size: 12.5px; margin-top: 10px; }
+  button.ghost.danger:hover { color: var(--err); border-color: var(--err); }
+  a.btn { text-decoration: none; display: inline-block; }
+  .err { color: var(--err); font-size: 13.5px; margin-top: 10px; min-height: 0; }
+
+  details.opts { margin-top: 12px; }
+  details.opts summary { color: var(--dim); font-size: 13px; cursor: pointer; user-select: none; list-style: none; }
+  details.opts summary::before { content: "▸ "; }
+  details.opts[open] summary::before { content: "▾ "; }
+  .optgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }
+  .opt label { display: block; color: var(--dim); font-size: 12px; margin-bottom: 4px; }
+  .opt select { width: 100%; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; padding-top: 20px; }
 
   .drop {
-    margin-top: 12px; border: 1.5px dashed var(--line); border-radius: 8px;
-    padding: 14px; text-align: center; color: var(--dim); font-size: 13.5px; cursor: pointer;
+    margin-top: 12px; border: 1.5px dashed var(--line); border-radius: 10px;
+    padding: 13px; text-align: center; color: var(--dim); font-size: 13.5px; cursor: pointer;
     transition: border-color .15s, background .15s;
   }
   .drop.hover, .drop:hover { border-color: var(--accent); background: rgba(124,140,255,.05); }
 
-  .job { padding: 16px 18px; margin-bottom: 10px; }
-  .job-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; min-width: 200px; }
-  .badge { font-size: 11px; padding: 2.5px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); text-transform: uppercase; letter-spacing: .4px; }
-  .chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
-  .chip.queued { background: #2a2f40; color: var(--dim); }
-  .chip.running { background: rgba(124,140,255,.15); color: var(--accent); }
-  .chip.done { background: rgba(74,222,128,.12); color: var(--ok); }
-  .chip.done_with_errors { background: rgba(251,191,36,.12); color: var(--warn); }
-  .chip.error, .chip.interrupted { background: rgba(248,113,113,.12); color: var(--err); }
-  .chip.cancelled { background: #2a2f40; color: var(--dim); }
+  .job { padding: 15px 17px; margin-bottom: 10px; }
+  .job-head { display: flex; align-items: flex-start; gap: 10px; }
+  .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; line-height: 1.35; }
+  .badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; margin-top: 2px; }
+  .state { margin-top: 6px; font-size: 14px; color: var(--dim); }
+  .state.ok { color: var(--ok); }
+  .state.warn { color: var(--warn); }
+  .state.bad { color: var(--err); }
+  .state .dim { color: var(--dim); }
 
-  .bar { height: 5px; background: var(--panel2); border-radius: 999px; margin: 12px 0 4px; overflow: hidden; }
+  .bar { height: 5px; background: var(--panel2); border-radius: 999px; margin: 10px 0 2px; overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .5s; }
   .bar.indet i { width: 30% !important; animation: slide 1.2s ease-in-out infinite alternate; }
   @keyframes slide { from { margin-left: 0 } to { margin-left: 70% } }
-  .meta { color: var(--dim); font-size: 12.5px; display: flex; gap: 14px; flex-wrap: wrap; }
 
-  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  details { margin-top: 10px; }
-  summary { color: var(--dim); font-size: 13px; cursor: pointer; user-select: none; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .actions .spacer { flex: 1; }
+  .link { background: none; border: 0; color: var(--dim); font-size: 13px; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-weight: 400; }
+  .link:hover { color: var(--text); filter: none; }
+
+  .missing { margin-top: 10px; font-size: 13.5px; }
+  .missing ul { margin: 6px 0 0 18px; color: var(--dim); }
   pre {
     background: #0b0d12; border: 1px solid var(--line); border-radius: 8px;
-    padding: 12px; font-size: 12px; line-height: 1.45; overflow-x: auto;
-    max-height: 260px; overflow-y: auto; margin-top: 8px; color: #aab2c8;
+    padding: 12px; font-size: 12px; line-height: 1.45; overflow: auto;
+    max-height: 240px; margin-top: 8px; color: #aab2c8;
   }
   .files { margin-top: 10px; display: grid; gap: 4px; }
   .file { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; padding: 7px 10px; background: var(--panel2); border-radius: 7px; }
@@ -81,88 +102,180 @@
   .file span { color: var(--dim); white-space: nowrap; }
 
   .empty { text-align: center; color: var(--dim); padding: 40px 0; font-size: 14px; }
+  footer { text-align: center; color: var(--dim); font-size: 12.5px; margin-top: 28px; }
 
-  #login { position: fixed; inset: 0; background: var(--bg); display: none; place-items: center; z-index: 10; }
-  #login .card { padding: 32px; width: 320px; display: grid; gap: 12px; }
-  #login h2 { font-size: 20px; }
+  .overlay { position: fixed; inset: 0; background: rgba(15,17,23,.82); display: none; place-items: center; z-index: 10; padding: 18px; backdrop-filter: blur(4px); }
+  .overlay.show { display: grid; }
+  .sheet { padding: 24px; width: min(520px, 100%); display: grid; gap: 12px; }
+  .sheet h2 { font-size: 19px; line-height: 1.3; }
+  .sheet .sub { color: var(--dim); font-size: 14px; }
+  .sheet ol { margin: 4px 0 0 20px; color: var(--dim); font-size: 13.5px; max-height: 180px; overflow: auto; }
+  .sheet .btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
   #loginErr { color: var(--err); font-size: 13px; min-height: 18px; }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: rot .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes rot { to { transform: rotate(360deg) } }
 </style>
 </head>
 <body>
-<div id="login"><div class="card">
+
+<div class="overlay" id="login"><div class="card sheet" style="width:min(340px,100%)">
   <h2>Reprise</h2>
-  <input type="password" id="pw" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" style="width:100%" autocomplete="current-password">
+  <input type="password" id="pw" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
   <div id="loginErr"></div>
   <button onclick="doLogin()">Sign in</button>
 </div></div>
 
+<div class="overlay" id="confirm"><div class="card sheet">
+  <h2 id="cTitle"></h2>
+  <div class="sub" id="cSub"></div>
+  <ol id="cTracks"></ol>
+  <div class="sub" id="cOpts"></div>
+  <div class="btns">
+    <button class="ghost" onclick="closeConfirm()">Cancel</button>
+    <button id="cGo" onclick="confirmGo()">Download</button>
+  </div>
+</div></div>
+
 <div class="wrap">
   <header>
-    <h1>Re<span>prise</span></h1>
-    <p>Spotify playlists &amp; YouTube &rarr; your files</p>
+    <img src="/static/icon.svg" alt="">
+    <h1>Reprise</h1>
+    <p>Spotify &amp; YouTube<br>→ MP3</p>
   </header>
 
   <div class="card submit">
     <div class="row">
-      <input type="text" id="input" placeholder="Spotify or YouTube URL, or search — e.g. a playlist link"
-             onkeydown="if(event.key==='Enter')submit()">
-      <select id="format">
-        <option value="mp3" selected>MP3 · 320k</option>
-        <option value="m4a">M4A</option>
-        <option value="opus">Opus</option>
-        <option value="flac">FLAC</option>
-      </select>
-      <button onclick="submit()">Download</button>
+      <input type="text" id="input" placeholder="Paste a Spotify or YouTube link, or search…"
+             autocomplete="off" autocapitalize="off" onkeydown="if(event.key==='Enter')submit()">
+      <button id="goBtn" onclick="submit()">Download</button>
     </div>
-    <div class="drop" id="drop">or drop an <b>Exportify CSV</b> here (works for private playlists)</div>
-    <input type="file" id="csvfile" accept=".csv" style="display:none">
-    <div class="hint">Spotify links: track / album / playlist / artist. YouTube: video or playlist. Anything else is treated as a search.</div>
+    <div class="err" id="subErr"></div>
+    <details class="opts">
+      <summary>Options</summary>
+      <div class="optgrid">
+        <div class="opt"><label>Quality</label>
+          <select id="bitrate">
+            <option value="320" selected>Best · 320 kbps</option>
+            <option value="192">Compact · 192 kbps</option>
+            <option value="128">Smallest · 128 kbps</option>
+          </select></div>
+        <div class="opt"><label>Format</label>
+          <select id="format">
+            <option value="mp3" selected>MP3</option>
+            <option value="m4a">M4A</option>
+            <option value="opus">Opus</option>
+            <option value="flac">FLAC</option>
+          </select></div>
+        <label class="check"><input type="checkbox" id="numbered" checked> Number tracks in playlist order</label>
+      </div>
+    </details>
+    <div class="drop" id="drop">or drop an <b>Exportify CSV</b> here · for private playlists</div>
+    <input type="file" id="csvfile" accept=".csv,text/csv" style="display:none">
   </div>
 
   <div id="jobs"></div>
+  <footer id="foot"></footer>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const fmtSize = (b) => b > 1048576 ? (b/1048576).toFixed(1)+' MB' : Math.round(b/1024)+' KB';
-const esc = (s) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let openJobs = new Set();
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const mb = (b) => b >= 1e9 ? (b/1e9).toFixed(2)+' GB' : b >= 1e6 ? (b/1e6).toFixed(b >= 1e8 ? 0 : 1)+' MB' : Math.round(b/1e3)+' KB';
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+let openDetails = new Set();
+let pending = null; // {kind:'link'|'csv', ...} waiting in the confirm sheet
 
-async function api(path, opts) {
-  const r = await fetch(path, opts);
-  if (r.status === 401) { $('login').style.display = 'grid'; throw new Error('auth'); }
+function opts() {
+  return { format: $('format').value, bitrate: +$('bitrate').value, numbered: $('numbered').checked };
+}
+
+async function api(path, o) {
+  const r = await fetch(path, o);
+  if (r.status === 401) { $('login').classList.add('show'); throw new Error('auth'); }
   return r;
 }
+async function detailOf(r) { try { return (await r.json()).detail || 'something went wrong'; } catch { return 'something went wrong'; } }
 
 async function doLogin() {
   $('loginErr').textContent = '';
   try {
     const r = await fetch('/api/login', { method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ password: $('pw').value }) });
-    if (r.ok) { $('login').style.display = 'none'; $('pw').value = ''; refresh(); }
-    else $('loginErr').textContent = (await r.json()).detail || 'login failed';
+    if (r.ok) { $('login').classList.remove('show'); $('pw').value = ''; refresh(); }
+    else $('loginErr').textContent = await detailOf(r);
   } catch { $('loginErr').textContent = 'network error — is the server up?'; }
+}
+
+// ---- submit flow: look up first, confirm if it's more than one song --------
+let slowTimer = null;
+function busy(on) {
+  $('goBtn').disabled = on;
+  $('goBtn').innerHTML = on ? '<span class="spin"></span>Looking up' : 'Download';
+  clearTimeout(slowTimer);
+  if (on) slowTimer = setTimeout(() => { $('subErr').style.color = 'var(--dim)'; $('subErr').textContent = 'Still looking up — big playlists can take a minute or two.'; }, 8000);
+  else { $('subErr').style.color = ''; }
 }
 
 async function submit() {
   const input = $('input').value.trim();
   if (!input) return;
+  $('subErr').textContent = '';
+  busy(true);
   try {
-    const r = await api('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ input, format: $('format').value }) });
-    if (r.ok) { $('input').value = ''; refresh(); }
-    else alert((await r.json()).detail || 'failed');
-  } catch (e) { if (e.message !== 'auth') alert('network error'); }
+    const o = opts();
+    const r = await api('/api/preflight', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ input, ...o }) });
+    if (!r.ok) { $('subErr').textContent = await detailOf(r); return; }
+    const p = await r.json();
+    $('subErr').textContent = '';
+    pending = { kind: 'link', input, token: p.token, title: p.title, ...o };
+    if (p.count > 1) showConfirm(p);
+    else await confirmGo();
+  } catch (e) { if (e.message !== 'auth') $('subErr').textContent = 'network error'; }
+  finally { busy(false); }
 }
 
 async function uploadCsv(file) {
-  const fd = new FormData();
-  fd.append('file', file);
+  $('subErr').textContent = '';
+  busy(true);
   try {
-    const r = await api('/api/jobs/csv?format=' + $('format').value, { method: 'POST', body: fd });
-    if (r.ok) refresh();
-    else alert((await r.json()).detail || 'CSV upload failed');
-  } catch (e) { if (e.message !== 'auth') alert('network error'); }
+    const o = opts();
+    const fd = new FormData(); fd.append('file', file);
+    const r = await api(`/api/jobs/csv?dry_run=1&format=${o.format}&bitrate=${o.bitrate}`, { method: 'POST', body: fd });
+    if (!r.ok) { $('subErr').textContent = await detailOf(r); return; }
+    const p = await r.json();
+    pending = { kind: 'csv', file, ...o };
+    if (p.count > 1) showConfirm(p); else await confirmGo();
+  } catch (e) { if (e.message !== 'auth') $('subErr').textContent = 'network error'; }
+  finally { busy(false); }
+}
+
+function showConfirm(p) {
+  $('cTitle').textContent = p.title;
+  $('cSub').textContent = `${plural(p.count, 'song')} · about ${p.est_mb} MB at ${pending.bitrate} kbps`;
+  const list = p.tracks.slice(0, 12).map(t => `<li>${esc(t)}</li>`).join('');
+  $('cTracks').innerHTML = list + (p.count > 12 ? `<li style="list-style:none;margin-left:-20px">… and ${p.count - 12} more</li>` : '');
+  $('cOpts').textContent = `${pending.format.toUpperCase()} · ${pending.numbered ? 'numbered in playlist order' : 'not numbered'} — change under Options`;
+  $('confirm').classList.add('show');
+}
+function closeConfirm() { $('confirm').classList.remove('show'); pending = null; }
+
+async function confirmGo() {
+  if (!pending) return;
+  const p = pending; pending = null;
+  $('confirm').classList.remove('show');
+  try {
+    let r;
+    if (p.kind === 'csv') {
+      const fd = new FormData(); fd.append('file', p.file);
+      r = await api(`/api/jobs/csv?format=${p.format}&bitrate=${p.bitrate}&numbered=${p.numbered ? 1 : 0}`, { method: 'POST', body: fd });
+    } else {
+      r = await api('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ input: p.input, token: p.token, title: p.title, format: p.format, bitrate: p.bitrate, numbered: p.numbered }) });
+    }
+    if (r.ok) { $('input').value = ''; refresh(); }
+    else $('subErr').textContent = await detailOf(r);
+  } catch (e) { if (e.message !== 'auth') $('subErr').textContent = 'network error'; }
 }
 
 const drop = $('drop');
@@ -172,79 +285,115 @@ $('csvfile').onchange = (e) => { if (e.target.files[0]) uploadCsv(e.target.files
 ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hover'); }));
 drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) uploadCsv(f); });
 
-async function jobAction(id, method, path, confirmMsg) {
+// ---- job cards ---------------------------------------------------------------
+async function act(id, method, path, confirmMsg) {
   if (confirmMsg && !confirm(confirmMsg)) return;
-  await api(`/api/jobs/${id}${path}`, { method });
+  try {
+    const r = await api(`/api/jobs/${id}${path}`, { method });
+    if (!r.ok) alert(await detailOf(r));
+  } catch {}
+  refresh();
+}
+async function tryAgain(j) {
+  // errored/interrupted jobs without a track list: just resubmit the same input
+  try {
+    await api('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ input: j.input, format: j.format, bitrate: j.bitrate, numbered: !!j.numbered }) });
+    await api(`/api/jobs/${j.id}`, { method: 'DELETE' });
+  } catch {}
   refresh();
 }
 
-function jobCard(j, detail) {
-  const running = j.status === 'running';
+function stateLine(j) {
+  const multi = (j.total || 0) > 1;
+  const songs = (n) => multi ? plural(n, 'song') : '';
+  switch (j.status) {
+    case 'queued': return ['', 'Waiting…'];
+    case 'running':
+      if (j.step === 'resolving') return ['', '<span class="spin"></span>Looking up tracks…'];
+      if (j.step === 'finishing') return ['', '<span class="spin"></span>Finishing up…'];
+      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : 'Downloading…'];
+    case 'retrying': return ['', '<span class="spin"></span>Retrying the missing ones…'];
+    case 'done':
+      return ['ok', `Ready${multi ? ' · ' + songs(j.files_count) : ''} · ${mb(j.size_bytes)}`];
+    case 'done_with_errors':
+      return ['warn', `Ready · ${songs(j.files_count) || mb(j.size_bytes)} · <b>${plural(j.missing.length, 'song')} couldn't be found</b>`];
+    case 'cancelled': return ['', 'Cancelled'];
+    case 'interrupted': return ['bad', 'Interrupted — the server restarted'];
+    default: return ['bad', `Couldn't download — ${esc(j.error || 'unknown error')}`];
+  }
+}
+
+function card(j, d) {
+  const active = j.status === 'running' || j.status === 'queued' || j.status === 'retrying';
+  const ready = j.status === 'done' || j.status === 'done_with_errors';
+  const multi = (j.total || 0) > 1 || j.files_count > 1;
+  const [cls, line] = stateLine(j);
   const pct = j.total ? Math.min(100, Math.round(100 * j.done / j.total)) : null;
-  const kindLabel = { spotify: 'spotify', csv: 'csv', search: 'search', media: 'yt-dlp' }[j.kind] || j.kind;
-  const age = new Date(j.created * 1000).toLocaleString();
-  let bar = '';
-  if (running || j.status === 'queued') {
-    bar = `<div class="bar ${pct === null ? 'indet' : ''}"><i style="width:${pct ?? 30}%"></i></div>`;
+  const bar = (j.status === 'running' && j.step === 'downloading')
+    ? `<div class="bar ${pct === null ? 'indet' : ''}"><i style="width:${pct ?? 30}%"></i></div>` : '';
+  const kind = { spotify: 'Spotify', csv: 'Exportify', search: 'Search', media: 'YouTube' }[j.kind] || j.kind;
+
+  let primary = '';
+  if (ready && multi) primary = `<a class="btn" href="/api/jobs/${j.id}/zip"><button>Save to computer</button></a>`;
+  else if (ready && d && d.files.length === 1) primary = `<a class="btn" href="/api/jobs/${j.id}/files/${encodeURIComponent(d.files[0].name)}"><button>Save to computer</button></a>`;
+  else if (ready) primary = `<a class="btn" href="/api/jobs/${j.id}/zip"><button>Save to computer</button></a>`;
+
+  const retry = j.status === 'done_with_errors' ? `<button class="ghost" onclick="act('${j.id}','POST','/retry')">Retry missing</button>` : '';
+  const again = (j.status === 'error' || j.status === 'interrupted' || j.status === 'cancelled') && j.input
+    ? `<button class="ghost" onclick='tryAgain(${JSON.stringify(j).replace(/'/g, "&#39;")})'>Try again</button>` : '';
+  const cancel = active ? `<button class="ghost" onclick="act('${j.id}','POST','/cancel')">Cancel</button>` : '';
+  const remove = !active ? `<button class="ghost danger" onclick="act('${j.id}','DELETE','', 'Remove this download and its files?')">Remove</button>` : '';
+
+  let missing = '';
+  if (j.status === 'done_with_errors' && j.missing.length) {
+    missing = `<div class="missing">Couldn't find:<ul>${j.missing.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>`;
   }
-  let filesHtml = '';
-  if (detail && detail.files.length) {
-    filesHtml = '<div class="files">' + detail.files.map(f =>
-      `<div class="file"><a href="/api/jobs/${j.id}/files/${encodeURIComponent(f.name)}">${esc(f.name)}</a><span>${fmtSize(f.size)}</span></div>`
-    ).join('') + '</div>';
+  let details = '';
+  if (openDetails.has(j.id) && d) {
+    details = (d.files.length ? '<div class="files">' + d.files.map(f =>
+      `<div class="file"><a href="/api/jobs/${j.id}/files/${encodeURIComponent(f.name)}">${esc(f.name)}</a><span>${mb(f.size)}</span></div>`).join('') + '</div>' : '')
+      + (d.log ? `<pre>${esc(d.log)}</pre>` : '');
   }
-  const logHtml = detail && detail.log ? `<pre>${esc(detail.log)}</pre>` : '';
-  const zipBtn = (j.files > 1) ? `<a href="/api/jobs/${j.id}/zip"><button class="ghost">Zip all</button></a>` : '';
-  const cancelBtn = (running || j.status === 'queued') ? `<button class="ghost" onclick="jobAction('${j.id}','POST','/cancel')">Cancel</button>` : '';
-  const rmBtn = (!running) ? `<button class="ghost" onclick="jobAction('${j.id}','DELETE','', 'Remove this job from the list? (files are kept)')">Remove</button>` : '';
-  return `<div class="card job" id="job-${j.id}">
-    <div class="job-head">
-      <div class="job-title">${esc(j.title)}</div>
-      <span class="badge">${kindLabel}</span>
-      <span class="chip ${j.status}">${j.status.replace(/_/g,' ')}</span>
+  return `<div class="card job">
+    <div class="job-head"><div class="job-title">${esc(j.title)}</div><span class="badge">${kind}</span></div>
+    <div class="state ${cls}">${line}</div>
+    ${bar}${missing}
+    <div class="actions">${primary}${retry}${again}${cancel}<span class="spacer"></span>${remove}
+      <button class="link" onclick="toggle('${j.id}')">${openDetails.has(j.id) ? 'hide details' : 'details'}</button>
     </div>
-    ${bar}
-    <div class="meta">
-      <span>${j.total ? `${j.done}/${j.total} tracks` : (j.files ? `${j.files} file${j.files>1?'s':''}` : '')}</span>
-      <span>${j.format}</span><span>${age}</span>
-      ${j.error ? `<span style="color:var(--err)">${esc(j.error)}</span>` : ''}
-    </div>
-    <div class="actions">${zipBtn}${cancelBtn}${rmBtn}
-      <button class="ghost" onclick="toggleDetail('${j.id}')">${openJobs.has(j.id) ? 'Hide' : 'Details'}</button>
-    </div>
-    ${openJobs.has(j.id) ? filesHtml + logHtml : ''}
+    ${details}
   </div>`;
 }
 
-function toggleDetail(id) {
-  openJobs.has(id) ? openJobs.delete(id) : openJobs.add(id);
-  refresh();
-}
+function toggle(id) { openDetails.has(id) ? openDetails.delete(id) : openDetails.add(id); refresh(); }
 
-let refreshSeq = 0;
+let seq = 0;
 async function refresh() {
-  const mySeq = ++refreshSeq;
+  const my = ++seq;
   let data;
-  try {
-    const r = await api('/api/jobs');
-    data = await r.json();
-  } catch { return; }
-  if (mySeq !== refreshSeq) return; // a newer poll superseded this one
+  try { data = await (await api('/api/jobs')).json(); } catch { return; }
+  if (my !== seq) return;
   const details = {};
-  await Promise.all([...openJobs].map(async id => {
+  await Promise.all([...openDetails].map(async id => {
     try { details[id] = await (await api('/api/jobs/' + id)).json(); } catch {}
   }));
-  if (mySeq !== refreshSeq) return;
+  // single-file jobs need the filename for the direct link
+  await Promise.all(data.jobs.filter(j => (j.status === 'done' || j.status === 'done_with_errors') && j.files_count === 1 && !details[j.id])
+    .map(async j => { try { details[j.id] = await (await api('/api/jobs/' + j.id)).json(); } catch {} }));
+  if (my !== seq) return;
   const el = $('jobs');
-  if (!data.jobs.length) {
-    el.innerHTML = '<div class="empty">No downloads yet — paste a link above to get started.</div>';
-    return;
-  }
-  el.innerHTML = data.jobs.map(j => jobCard(j, details[j.id])).join('');
+  el.innerHTML = data.jobs.length
+    ? data.jobs.map(j => card(j, details[j.id])).join('')
+    : '<div class="empty">Nothing yet — paste a link above.</div>';
+  const active = data.jobs.filter(j => j.status === 'running' || j.status === 'retrying').length;
+  document.title = active ? `(${active}) Reprise` : 'Reprise';
+  $('foot').textContent = `Downloads are kept for ${data.keep_days} day${data.keep_days == 1 ? '' : 's'} · ${mb(data.disk_used)} used`;
 }
 
 refresh();
 setInterval(refresh, 2000);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>
