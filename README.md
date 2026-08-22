@@ -94,6 +94,13 @@ app/static/index.html UI (single file, no build step)
 Built with assistance from Claude. Engine credit: spotDL and yt-dlp do the
 actual heavy lifting.
 
+## Two lanes
+
+Jobs run in two lanes, one job at a time each: **quick** (a single track,
+video or search) and **bulk** (playlists, albums, artists, CSVs, YouTube
+lists). A pasted song therefore never waits behind a playlist, while there
+are never more than two download processes talking to YouTube.
+
 ## Why lookups are fast (and a note on Spotify rate limits)
 
 spotdl fetches Spotify metadata through **spotapi**, which discovers Spotify's

@@ -106,6 +106,7 @@ COLUMNS = {
     "parent_id": "TEXT",  # set on retry jobs; hidden from the list
     "cover": "TEXT",      # remote artwork URL (fallback when nothing is embedded)
     "current": "TEXT",    # track being downloaded right now
+    "lane": "TEXT NOT NULL DEFAULT 'bulk'",  # quick (one song) or bulk (many) — each lane runs one job at a time
 }
 
 
@@ -175,21 +176,36 @@ def slugify(text: str, maxlen: int = 40) -> str:
     return text[:maxlen] or "job"
 
 
+def lane_for(kind: str, input_text: str, total: Optional[int]) -> str:
+    """Single songs go to the quick lane so they never wait behind a playlist."""
+    if kind in ("csv", "retry"):
+        return "bulk"
+    if kind == "search":
+        return "quick"
+    if kind == "spotify":
+        return "quick" if "/track/" in input_text else "bulk"
+    if kind == "media":
+        return "bulk" if ("list=" in input_text or "/playlist" in input_text) else "quick"
+    return "quick" if (total or 0) <= 1 else "bulk"
+
+
 def create_job(kind: str, input_text: str, title: str, fmt: str, bitrate: int,
                numbered: bool, total: Optional[int], expected=None,
-               job_dir: Optional[Path] = None, parent_id: Optional[str] = None) -> str:
+               job_dir: Optional[Path] = None, parent_id: Optional[str] = None,
+               lane: Optional[str] = None) -> str:
     job_id = uuid.uuid4().hex[:12]
+    lane = lane or lane_for(kind, input_text, total)
     if job_dir is None:
         job_dir = DOWNLOAD_DIR / f"{slugify(title)}-{job_id[:6]}"
     job_dir.mkdir(parents=True, exist_ok=True)
     with db() as conn:
         conn.execute(
             "INSERT INTO jobs (id, created, kind, input, title, format, bitrate, numbered,"
-            " status, total, done, dir, expected, parent_id)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)",
+            " status, total, done, dir, expected, parent_id, lane)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)",
             (job_id, time.time(), kind, input_text, title, fmt, bitrate, int(numbered),
              "queued", total, str(job_dir), json.dumps(expected) if expected else None,
-             parent_id),
+             parent_id, lane),
         )
     WAKE.set()
     return job_id
@@ -656,13 +672,14 @@ def probe_media(url: str) -> dict:
                         "duration": info.get("duration") or 0, "url": url, "id": info.get("id") or ""}]}
 
 
-def worker_loop() -> None:
+def worker_loop(lane: str = "bulk") -> None:
     while True:
         try:
             claimed = None
             with db() as conn:
                 row = conn.execute(
-                    "SELECT id FROM jobs WHERE status='queued' ORDER BY created LIMIT 1"
+                    "SELECT id FROM jobs WHERE status='queued' AND lane=? ORDER BY created LIMIT 1",
+                    (lane,),
                 ).fetchone()
                 if row is not None:
                     cur = conn.execute(
@@ -999,7 +1016,7 @@ async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
 
 def public_job(r: sqlite3.Row, with_files: bool = False) -> dict:
     d = {k: r[k] for k in ("id", "created", "finished", "kind", "title", "format", "bitrate",
-                           "numbered", "status", "step", "total", "done", "error", "current")}
+                           "numbered", "status", "step", "total", "done", "error", "current", "lane")}
     # the original link/query, so the UI can offer "Try again" (not for CSV jobs: that's a URL list)
     d["input"] = r["input"] if r["kind"] in ("spotify", "media", "search") else None
     job_dir = Path(r["dir"])
@@ -1078,7 +1095,8 @@ def retry(job_id: str):
     if row["kind"] == "media":
         # yt-dlp skips files that already exist, so just re-run the whole link
         create_job("media", row["input"], row["title"], row["format"], row["bitrate"],
-                   bool(row["numbered"]), row["total"], expected, job_dir=job_dir, parent_id=job_id)
+                   bool(row["numbered"]), row["total"], expected, job_dir=job_dir, parent_id=job_id,
+                   lane=row["lane"])
     else:
         _matched, missing = match_files(expected, list_audio_files(job_dir))
         if not missing:
@@ -1086,7 +1104,7 @@ def retry(job_id: str):
             raise HTTPException(409, "nothing is missing")
         create_job("retry", json.dumps([t["url"] for t in missing]), row["title"], row["format"],
                    row["bitrate"], bool(row["numbered"]), len(missing), missing,
-                   job_dir=job_dir, parent_id=job_id)
+                   job_dir=job_dir, parent_id=job_id, lane=row["lane"])
     update_job(job_id, status="retrying", step=None, error=None)
     return {"ok": True}
 
@@ -1249,5 +1267,8 @@ init_db()
 if not os.access(DOWNLOAD_DIR, os.W_OK):
     print(f"WARNING: {DOWNLOAD_DIR} is not writable by uid {os.getuid()}. On a NAS, chown the "
           "mounted downloads folder to uid 10001. Downloads WILL fail until fixed.", flush=True)
-threading.Thread(target=worker_loop, daemon=True, name="yoink-worker").start()
+# Two lanes, one job each: a pasted song never waits behind a playlist, and
+# there are never more than two download processes hitting YouTube.
+threading.Thread(target=worker_loop, args=("bulk",), daemon=True, name="yoink-worker-bulk").start()
+threading.Thread(target=worker_loop, args=("quick",), daemon=True, name="yoink-worker-quick").start()
 threading.Thread(target=retention_loop, daemon=True, name="yoink-retention").start()
