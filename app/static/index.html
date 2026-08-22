@@ -210,6 +210,13 @@
   .help { color: var(--dim); font-size: 12.5px; margin: 4px 0 0 25px; }
   .help.versions { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--line); white-space: pre-line; font-family: var(--mono); font-size: 12px; }
   .help.versions.warn { color: var(--warn); }
+  .notice { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin: 0 0 14px; padding: 10px 14px;
+    background: rgba(251,191,36,.06); border: 1px solid rgba(251,191,36,.3); border-radius: 10px; color: var(--warn);
+    font-family: inherit; font-weight: 500; font-size: 13.5px; line-height: 1.4; cursor: pointer; transition: border-color .15s, background .15s; }
+  .notice:hover { border-color: rgba(251,191,36,.6); background: rgba(251,191,36,.1); filter: none; }
+  .notice[hidden] { display: none; }
+  .notice .arrow { margin-left: auto; opacity: .7; }
+  pre.cmd { user-select: all; white-space: pre-wrap; word-break: break-all; }
   #loginErr { color: var(--err); font-size: 13px; min-height: 18px; }
   .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: rot .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
   .go .spin { border-color: rgba(255,255,255,.35); border-top-color: #fff; margin: 0; }
@@ -285,6 +292,13 @@
   <div class="dropzone" id="dropzone" onclick="$('csvfile').click()"><svg class="i"><use href="#i-file"/></svg><div>Drop the CSV here, or <span>choose a file</span></div></div>
 </div></div>
 
+<div class="overlay" id="update"><div class="card sheet" style="width:min(480px,100%)">
+  <div class="sheet-head"><h2>Update yt-dlp</h2><button class="ibtn" onclick="closeUpdate()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="sub" id="uText"></div>
+  <pre class="cmd">YTDLP_REFRESH=$(date +%s) docker compose build &amp;&amp; docker compose up -d</pre>
+  <div class="sub">Takes a few seconds — everything except yt-dlp is cached. A plain restart won't do it; yt-dlp is part of the image.</div>
+</div></div>
+
 <div class="overlay" id="details"><div class="card sheet">
   <div class="sheet-head"><h2 id="dTitle"></h2><button class="ibtn" onclick="closeDetails()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
   <dl class="kv" id="dMeta"></dl>
@@ -307,6 +321,7 @@
   <div class="under"><div class="err" id="subErr"></div><button class="importbtn" onclick="openImport()"><svg class="i"><use href="#i-file"/></svg>Import private playlist</button></div>
   <input type="file" id="csvfile" accept=".csv,text/csv" style="display:none">
 
+  <button class="notice" id="notice" type="button" onclick="openUpdate()" hidden></button>
   <div class="jobs" id="jobs"></div>
   <footer id="foot"></footer>
 </div>
@@ -441,6 +456,8 @@ async function confirmGo() {
   } catch (e) { if (e.message !== 'auth') fail('network error'); }
 }
 
+function openUpdate() { $('update').classList.add('show'); }
+function closeUpdate() { $('update').classList.remove('show'); }
 function openImport() { $('import').classList.add('show'); }
 function closeImport() { $('import').classList.remove('show'); }
 // page-wide CSV drop target
@@ -452,7 +469,7 @@ document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) { closeImport(); uploadCsv(f); } });
 // click on the backdrop closes the sheet (mousedown on the overlay itself, so a
 // drag-select that ends outside the sheet doesn't dismiss it)
-const closers = { options: closeOptions, details: closeDetails, confirm: closeConfirm, import: closeImport };
+const closers = { options: closeOptions, details: closeDetails, confirm: closeConfirm, import: closeImport, update: closeUpdate };
 for (const [id, close] of Object.entries(closers)) {
   $(id).addEventListener('mousedown', e => { if (e.target === e.currentTarget) close(); });
 }
@@ -460,6 +477,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if ($('options').classList.contains('show')) closeOptions();
   else if ($('import').classList.contains('show')) closeImport();
+  else if ($('update').classList.contains('show')) closeUpdate();
   else if (detailsId) closeDetails();
   else if (pending) closeConfirm();
 });
@@ -806,21 +824,24 @@ async function renderDetails() {
 
 // ---- polling ---------------------------------------------------------------------
 let seq = 0;
-// Engine versions live in the options sheet. yt-dlp versions are dates, so an
-// old one is a reliable "YouTube has probably broken this image" signal.
-function paintVersions(v) {
+// Engine versions live in the options sheet; a newer yt-dlp on PyPI becomes a
+// banner above the list that opens the rebuild explainer.
+function paintVersions(v, u) {
   const el = $('versions'); if (!el || !v) return;
+  const avail = !!(u && u.available);
   const parts = [];
-  if (v.yt_dlp) parts.push('yt-dlp ' + v.yt_dlp);
+  if (v.yt_dlp) parts.push('yt-dlp ' + v.yt_dlp + (avail ? ` → ${u.latest} available` : ''));
   if (v.spotdl) parts.push('spotDL ' + v.spotdl);
-  let warn = '';
-  const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})/.exec(v.yt_dlp || '');
-  if (m) {
-    const age = Math.floor((Date.now() - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 86400000);
-    if (age > 45) warn = `yt-dlp is ${age} days old — YouTube downloads may start failing. Rebuild the image to update it.`;
-  }
-  el.textContent = warn ? `${parts.join(' · ')}\n${warn}` : parts.join(' · ');
-  el.classList.toggle('warn', !!warn);
+  el.textContent = parts.join(' · ');
+  el.classList.toggle('warn', avail);
+}
+function paintUpdate(u) {
+  const n = $('notice');
+  const avail = !!(u && u.available);
+  n.hidden = !avail;
+  if (!avail) return;
+  n.innerHTML = `<span>yt-dlp ${esc(u.latest)} is out — this Yoink has ${esc(u.current)}. Rebuild to update.</span><span class="arrow">→</span>`;
+  $('uText').textContent = `Yoink downloads through yt-dlp, and YouTube changes break older releases within weeks. This image has ${u.current}; ${u.latest} is available. To update, run this where Yoink is installed:`;
 }
 
 async function refresh() {
@@ -834,7 +855,8 @@ async function refresh() {
   const active = data.jobs.filter(j => j.status === 'running' || j.status === 'retrying').length;
   document.title = active ? `(${active}) Yoink` : 'Yoink';
   $('foot').textContent = `Downloads are kept for ${data.keep_days} day${data.keep_days == 1 ? '' : 's'} · ${mb(data.disk_used)} used`;
-  paintVersions(data.versions);
+  paintVersions(data.versions, data.update);
+  paintUpdate(data.update);
   if (detailsId && JOBS[detailsId] && ['running', 'retrying', 'queued'].includes(JOBS[detailsId].status)) renderDetails();
 }
 

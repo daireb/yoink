@@ -51,6 +51,8 @@ STALL_TIMEOUT = int(os.environ.get("YOINK_STALL_TIMEOUT", "1800"))
 # Whole-request cap for /api/preflight. Cloudflare (and most proxies) give an
 # origin ~100s before returning 524, so stay under that and fail honestly.
 PREFLIGHT_TIMEOUT = int(os.environ.get("YOINK_PREFLIGHT_TIMEOUT", "80"))
+# Poll PyPI for a newer yt-dlp and show a banner suggesting a rebuild. Set to 0 to disable.
+UPDATE_CHECK = os.environ.get("YOINK_UPDATE_CHECK", "1") != "0"
 MAX_CSV_ROWS = 1000
 MAX_CSV_BYTES = 5 * 1024 * 1024
 AUDIO_EXTS = {".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"}
@@ -1052,7 +1054,8 @@ def jobs():
         rows = conn.execute(
             "SELECT * FROM jobs WHERE parent_id IS NULL ORDER BY created DESC LIMIT 200").fetchall()
     return {"jobs": [public_job(r) for r in rows], "auth_required": bool(PASSWORD),
-            "keep_days": KEEP_DAYS, "disk_used": disk_used(), "versions": TOOL_VERSIONS}
+            "keep_days": KEEP_DAYS, "disk_used": disk_used(), "versions": TOOL_VERSIONS,
+            "update": update_status()}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -1308,6 +1311,39 @@ def tool_versions() -> dict:
 
 
 TOOL_VERSIONS = tool_versions()
+UPDATE: dict = {"latest": None, "checked": None, "error": None}
+
+
+def version_key(v: Optional[str]) -> tuple:
+    """Comparable key for yt-dlp-style versions (2026.8.19 == 2026.08.19)."""
+    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in re.split(r"[.\-]", v or ""))
+
+
+def update_loop() -> None:
+    """Every 6h: ask PyPI what the newest yt-dlp is. The UI compares it with the
+    baked version and shows a rebuild hint — yt-dlp can't self-update on a
+    read-only filesystem, and we don't want it to."""
+    import urllib.request
+    time.sleep(20)
+    while True:
+        try:
+            with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=15) as r:
+                UPDATE["latest"] = json.load(r)["info"]["version"]
+            UPDATE["error"] = None
+        except Exception as exc:  # noqa: BLE001
+            UPDATE["error"] = str(exc)[:120]
+        UPDATE["checked"] = time.time()
+        time.sleep(6 * 3600)
+
+
+def update_status() -> dict:
+    cur, latest = TOOL_VERSIONS.get("yt_dlp"), UPDATE["latest"]
+    return {"current": cur, "latest": latest, "checked": UPDATE["checked"], "error": UPDATE["error"],
+            "available": bool(cur and latest and version_key(latest) > version_key(cur))}
+
+
+if UPDATE_CHECK:
+    threading.Thread(target=update_loop, daemon=True, name="yoink-update-check").start()
 
 threading.Thread(target=worker_loop, args=("bulk",), daemon=True, name="yoink-worker-bulk").start()
 threading.Thread(target=worker_loop, args=("quick",), daemon=True, name="yoink-worker-quick").start()

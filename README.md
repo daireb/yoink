@@ -51,6 +51,7 @@ or per file from the details view. Everything is kept for `YOINK_KEEP_DAYS`
 | `YOINK_KEEP_DAYS` | `7` | how long finished downloads are kept |
 | `YOINK_SECRET` | auto-generated, persisted in `/data` | cookie-signing secret override |
 | `YOINK_PREFLIGHT_TIMEOUT` | `80` | seconds a link lookup may take before giving up (keep under your proxy's origin timeout) |
+| `YOINK_UPDATE_CHECK` | `1` | poll PyPI every 6 h for a newer yt-dlp and show a rebuild banner; `0` disables |
 
 ## Exposing it (NAS / Cloudflare)
 
@@ -76,8 +77,9 @@ only the yt-dlp layer is redone:
 YTDLP_REFRESH=$(date +%s) docker compose build && docker compose up -d
 ```
 
-Put that in a weekly cron on the NAS. **Options** in the UI shows the
-yt-dlp and spotDL versions and warns when yt-dlp is more than 45 days old.
+Yoink checks PyPI every 6 hours; when a newer yt-dlp exists, a banner above
+the list says so and clicking it shows that command. A plain restart doesn't
+update yt-dlp — it's part of the image. **Options** shows the current versions.
 
 Container logs are capped (3 × 10 MB) in the compose file.
 
