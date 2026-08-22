@@ -1075,16 +1075,36 @@ def download_zip(job_id: str, t: Optional[str] = None):
 
 
 STATIC_DIR = Path(__file__).parent / "static"
+STATIC_REF_RE = re.compile(r'(/static/[\w./-]+\.(?:png|jpg|svg|woff2|js|css))(?=["\')])')
+_stamp_cache = {"at": 0.0, "value": "0"}
+
+
+def static_stamp() -> str:
+    """Build stamp = newest mtime under /static, so a changed icon or font is
+    never served from a stale browser cache."""
+    if time.time() - _stamp_cache["at"] > 5:
+        newest = 0.0
+        for root, _dirs, files in os.walk(STATIC_DIR):
+            for f in files:
+                try:
+                    newest = max(newest, os.stat(os.path.join(root, f)).st_mtime)
+                except OSError:
+                    pass
+        _stamp_cache.update(at=time.time(), value=format(int(newest), "x"))
+    return _stamp_cache["value"]
 
 
 @app.get("/")
 def index():
-    return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(STATIC_REF_RE.sub(rf"\1?v={static_stamp()}", html))
 
 
 @app.get("/manifest.webmanifest")
 def manifest():
-    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+    text = (STATIC_DIR / "manifest.webmanifest").read_text(encoding="utf-8")
+    return Response(STATIC_REF_RE.sub(rf"\1?v={static_stamp()}", text),
+                    media_type="application/manifest+json")
 
 
 @app.get("/sw.js")
