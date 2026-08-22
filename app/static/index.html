@@ -60,10 +60,14 @@
   .job.leave { animation: fall .22s ease-in both; pointer-events: none; }
   @keyframes fall { to { opacity: 0; transform: translateY(4px) scale(.985); } }
   .state { transition: color .35s ease; }
-  .bar i { transition: width .6s cubic-bezier(.2,.7,.2,1); }
+  .state .txt.swap, .now.swap { animation: swapIn .2s ease; }
+  @keyframes swapIn { from { opacity: 0; transform: translateY(-2px); } }
   [hidden] { display: none !important; }
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
-  @media (prefers-reduced-motion: reduce) { .job.enter, .job.leave { animation: none; } .bar i, .state { transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .job.enter, .job.leave, .bar.finishing, .bar i::after, .state .txt.swap, .now.swap, .bar.indet i { animation: none; }
+    .bar i, .state, .cover, .overlay, .overlay .sheet { transition: none; }
+  }
 
   .field { position: relative; }
   .field input {
@@ -101,7 +105,8 @@
   .job { padding: 0; margin-bottom: 12px; display: flex; align-items: stretch; overflow: hidden; transition: border-color .15s; }
   .job:hover { border-color: #363c52; }
   .coverwrap { width: 112px; flex-shrink: 0; align-self: stretch; position: relative; background: var(--panel2); border-right: 1px solid var(--line); display: grid; place-items: center; color: var(--dim); }
-  .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: filter .55s ease; }
+  .job.working .cover { filter: saturate(.4) brightness(.68); }
   .coverwrap > svg.i { width: 26px; height: 26px; }
   .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
           background: rgba(15,17,23,.7); color: #fff; border: 1px solid rgba(255,255,255,.25); transition: opacity .15s, transform .15s; backdrop-filter: blur(3px); }
@@ -133,8 +138,19 @@
   .now { font-family: var(--mono); font-size: 12px; color: var(--dim); opacity: .8; margin-top: 3px;
          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar { height: 5px; background: var(--panel2); border-radius: 999px; margin: 10px 0 2px; overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .5s; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; position: relative; overflow: hidden;
+           transition: width .6s cubic-bezier(.2,.7,.2,1), background-color .45s ease; }
   .bar.indet i { width: 30% !important; animation: slide 1.2s ease-in-out infinite alternate; }
+  /* a slow sheen — if it stops travelling, the job has stalled */
+  .bar i::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent);
+    transform: translateX(-100%); animation: sheen 1.9s ease-in-out infinite; }
+  @keyframes sheen { to { transform: translateX(100%); } }
+  /* completion: fill to 100%, turn green, hold, fade away */
+  .bar.finishing i { background: var(--ok); }
+  .bar.finishing i::after { animation: none; }
+  .bar.finishing { animation: barDone 1.1s ease forwards; }
+  @keyframes barDone { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
   @keyframes slide { from { margin-left: 0 } to { margin-left: 70% } }
   .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
   .actions .spacer { flex: 1; }
@@ -147,8 +163,12 @@
   .empty a { color: var(--accent); text-decoration: none; } .empty a:hover { text-decoration: underline; }
   footer { text-align: center; color: var(--dim); font-family: var(--mono); font-size: 11.5px; margin-top: 32px; }
 
-  .overlay { position: fixed; inset: 0; background: rgba(15,17,23,.82); display: none; place-items: center; z-index: 10; padding: 18px; backdrop-filter: blur(4px); }
-  .overlay.show { display: grid; }
+  .overlay { position: fixed; inset: 0; background: rgba(15,17,23,.82); display: grid; place-items: center; z-index: 10; padding: 18px;
+             backdrop-filter: blur(4px); visibility: hidden; opacity: 0; pointer-events: none;
+             transition: opacity .2s ease, visibility 0s linear .2s; }
+  .overlay.show { visibility: visible; opacity: 1; pointer-events: auto; transition: opacity .2s ease; }
+  .overlay .sheet { transform: translateY(10px) scale(.975); transition: transform .24s cubic-bezier(.2,.7,.2,1); }
+  .overlay.show .sheet { transform: none; }
   .overlay.top { z-index: 20; }
   .sheet { padding: 24px; width: min(540px, 100%); display: grid; gap: 12px; max-height: 90vh; overflow-y: auto; overflow-x: hidden; min-width: 0; }
   .sheet > * { min-width: 0; }   /* nothing inside may widen the sheet; long content wraps or scrolls itself */
@@ -526,6 +546,13 @@ function createCard(id) {
 }
 
 const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+// crossfade only when the phase changes — a ticking counter shouldn't flicker
+function setPhaseText(el, v, changedPhase) {
+  if (el.textContent === v) return;
+  el.textContent = v;
+  if (!changedPhase) return;
+  el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap');
+}
 const show = (el, on) => { if (el.hidden === !on) return; el.hidden = !on; };
 
 function updateCard(el, j) {
@@ -558,12 +585,27 @@ function updateCard(el, j) {
   const want = 'state' + (cls ? ' ' + cls : '');
   if (st.className !== want) st.className = want;
   show(q('.state .spin'), spinning);
-  setText(q('.state .txt'), text);
+  const phase = `${j.status}/${j.step || ''}`;
+  const phaseChanged = el.dataset.phase !== undefined && el.dataset.phase !== phase;
+  setPhaseText(q('.state .txt'), text, phaseChanged);
   const now = q('.now'); show(now, j.status === 'running' && !!j.current); setText(now, j.current || '');
+  el.classList.toggle('working', active);
 
   // progress
   const bar = q('.bar'); const downloading = j.status === 'running' && j.step === 'downloading';
-  show(bar, downloading);
+  // completion flourish: a running job turning Ready fills, greens, holds, fades
+  if (ready && ['running', 'retrying'].includes(el.dataset.status) && !bar.hidden) {
+    bar.classList.remove('indet');
+    bar.firstElementChild.style.width = '100%';
+    bar.classList.add('finishing');
+    el.dataset.flourish = '1';
+    setTimeout(() => {
+      bar.classList.remove('finishing'); bar.hidden = true;
+      bar.firstElementChild.style.width = '0%'; delete el.dataset.flourish;
+    }, 1150);
+  } else if (el.dataset.flourish !== '1') {
+    show(bar, downloading);
+  }
   if (downloading) {
     const pct = j.total ? Math.min(100, Math.round(100 * j.done / j.total)) : null;
     bar.classList.toggle('indet', pct === null);
@@ -586,6 +628,7 @@ function updateCard(el, j) {
   show(q('[data-act="again"]'), ['error', 'interrupted', 'cancelled'].includes(j.status));
   show(q('[data-act="cancel"]'), active);
   show(q('[data-act="remove"]'), !active);
+  el.dataset.phase = phase; el.dataset.status = j.status;
 }
 
 // one listener for every card action
