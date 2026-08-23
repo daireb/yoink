@@ -151,11 +151,17 @@ adding.
 ## Updates
 
 yt-dlp lives in its own Docker layer keyed on a `YTDLP_REFRESH` build arg, so
-refreshing it rebuilds one layer in seconds instead of the whole image.
-Nothing self-updates at runtime: the filesystem is read-only on purpose, and
-an app that installs fresh code from the internet into itself is a bigger
-risk than a stale downloader. Instead a background thread polls PyPI every six
-hours and the UI shows a banner when a newer release exists.
+refreshing it rebuilds one layer in seconds instead of the whole image. The
+consequence worth knowing: that layer stays cached across an ordinary
+`docker compose build`, so only a build that changes the argument actually
+pulls a new yt-dlp. `update.sh` exists so nobody has to remember that.
+
+Nothing self-updates at runtime. The filesystem is read-only on purpose, and
+an app that downloads and executes fresh code into itself is a worse failure
+mode than a stale downloader — an in-container auto-updater was designed and
+rejected on those grounds. What is automated is *detection*: a background
+thread polls PyPI every six hours and the UI shows a banner when a newer
+release exists, turning a silent breakage into a visible one.
 
 ## Known limitations
 

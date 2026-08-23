@@ -95,17 +95,35 @@ the `Secure` flag automatically over HTTPS.
 
 yt-dlp is the part that goes stale: YouTube changes something every few weeks
 and older releases stop working. The container has a read-only filesystem and
-deliberately can't update itself, so the fix is a rebuild — the Dockerfile is
-arranged so only the yt-dlp layer is redone and it takes seconds:
+deliberately does not update itself, so **updating is a rebuild you run on the
+host** — there is no automatic update inside the container. Use the included
+script:
 
 ```bash
-YTDLP_REFRESH=$(date +%s) docker compose build && docker compose up -d
+./update.sh
 ```
 
-Yoink checks PyPI every six hours and shows a banner when a newer yt-dlp is
-out; clicking it repeats that command. Running it weekly on a schedule means
-you'll never see the banner. Note that a plain `restart` does **not** update
-anything — yt-dlp is baked into the image.
+It rebuilds (only the yt-dlp layer is redone, so it takes seconds), restarts,
+and prints the new version. To run it automatically, add it to cron on the
+host — weekly is plenty:
+
+```cron
+0 4 * * 0  /path/to/yoink/update.sh >> /var/log/yoink-update.log 2>&1
+```
+
+On a Synology or QNAP NAS, use the Task Scheduler UI to run the same script
+as root instead of editing crontab.
+
+Two things that do **not** update yt-dlp, despite appearances:
+
+- `docker compose restart` — the image is unchanged.
+- `docker compose up -d --build` — the yt-dlp layer is cached and stays
+  cached until the `YTDLP_REFRESH` build argument changes, which is exactly
+  what `update.sh` does.
+
+The only thing Yoink automates is *noticing*: it checks PyPI every six hours
+and shows a banner when a newer yt-dlp is out, so a stale install tells you
+rather than just failing. Set `YOINK_UPDATE_CHECK=0` to turn that off.
 
 ## Audio quality, honestly
 
@@ -137,6 +155,7 @@ see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 app/main.py            backend + workers (single file)
 app/static/index.html  UI (single file, no build step)
 app/spotdl_patch.py    metadata-lookup cache for spotDL
+update.sh              rebuild with the latest yt-dlp (run on the host)
 ```
 
 ## Credits
