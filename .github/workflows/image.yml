@@ -157,8 +157,10 @@ jobs:
             echo '- tags: `latest` `${{ steps.ids.outputs.date }}` `ytdlp-${{ steps.smoke.outputs.ytdlp }}`'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Tidy old versions. GHCR storage is free today, so this is hygiene, not cost.
+      # Tidy old versions. GHCR storage is free today, so this is hygiene, not
+      # cost — and it runs after the publish, so it must never fail the run.
       - name: Prune old images
+        continue-on-error: true
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
