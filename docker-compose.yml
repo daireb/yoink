@@ -25,12 +25,14 @@ services:
     security_opt: [no-new-privileges:true]
     pids_limit: 1024
 
+    # All settings come from .env — see .env.example for what each one does.
     environment:
-      # Optional password for the web UI. Leave unset for open access
-      # (fine while the port is loopback-only or behind Tailscale/CF Access).
       YOINK_PASSWORD: ${YOINK_PASSWORD:-}
-      # Parallel downloads within a spotdl job.
-      YOINK_THREADS: "4"
+      YOINK_THREADS: ${YOINK_THREADS:-4}
+      YOINK_KEEP_DAYS: ${YOINK_KEEP_DAYS:-7}
+      YOINK_PREFLIGHT_TIMEOUT: ${YOINK_PREFLIGHT_TIMEOUT:-80}
+      YOINK_UPDATE_CHECK: ${YOINK_UPDATE_CHECK:-1}
+      YOINK_SECRET: ${YOINK_SECRET:-}
 
     ports:
       - "127.0.0.1:8080:8080"

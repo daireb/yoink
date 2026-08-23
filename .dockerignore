@@ -8,3 +8,5 @@ data/
 .env
 .DS_Store
 README.md
+ARCHITECTURE.md
+.env.example
