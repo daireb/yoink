@@ -166,10 +166,10 @@ day. The daily run asks PyPI for the newest yt-dlp and looks for a matching
 3. only then build for amd64 + arm64 and push, tagged `latest`,
    `YYYY.MM.DD` and `ytdlp-<version>`,
 4. prune old versions (GHCR storage is free today; this is hygiene). The
-   step is non-fatal. Deleting versions needs the package to grant this
-   repository the **Admin** role (GHCR package → Package settings → Manage
-   Actions access); if the step ever warns about permissions, that one
-   click fixes it.
+   step is non-fatal, and it works with the built-in token for the package
+   this workflow created. A fork whose package was created some other way
+   may need to grant its repository the Admin role (package settings →
+   Manage Actions access) before deletes succeed.
 
 The yt-dlp layer is keyed on the run id, so each build gets a fresh yt-dlp
 while everything beneath it stays cached. arm64 is built under QEMU — fine
