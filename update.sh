@@ -10,7 +10,7 @@ set -eu
 cd "$(dirname "$0")"
 
 image=$(docker compose config --images | head -1)
-cid=$(docker compose ps -q yoink 2>/dev/null || true)
+cid=$(docker compose ps -a -q yoink 2>/dev/null | head -1 || true)
 running=$([ -n "$cid" ] && docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || true)
 
 ver='import os, importlib.metadata as m; print(os.environ.get("YOINK_BUILD","?"), "· yt-dlp", m.version("yt-dlp"))'
@@ -22,11 +22,12 @@ case "$image" in
   *)
     [ -f Dockerfile ] || { echo "local image '$image' but no Dockerfile here — nothing to update from"; exit 1; }
     # Build aside; a forced-fresh yt-dlp layer always yields a new image id,
-    # so only adopt the candidate if its yt-dlp version actually differs.
+    # so only adopt the candidate if its yt-dlp version differs from the
+    # image currently behind the tag (not the container, which may be down).
     docker build -q -t "$image.candidate" --build-arg "YTDLP_REFRESH=$(date +%s)" . >/dev/null
-    if [ "$(report)" != "$(docker run --rm --entrypoint python "$image.candidate" -c "$ver" 2>/dev/null)" ]; then
-      docker tag "$image.candidate" "$image"
-    fi
+    have=$(docker run --rm --entrypoint python "$image" -c "$ver" 2>/dev/null || echo none)
+    want=$(docker run --rm --entrypoint python "$image.candidate" -c "$ver" 2>/dev/null || echo unknown)
+    if [ "$have" != "$want" ]; then docker tag "$image.candidate" "$image"; fi
     docker rmi "$image.candidate" >/dev/null 2>&1 || true ;;
 esac
 newest=$(docker image inspect -f '{{.Id}}' "$image")

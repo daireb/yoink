@@ -1320,11 +1320,6 @@ TOOL_VERSIONS = tool_versions()
 UPDATE: dict = {"latest": None, "checked": None, "error": None}
 
 
-def version_key(v: Optional[str]) -> tuple:
-    """Comparable key for yt-dlp-style versions (2026.8.19 == 2026.08.19)."""
-    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in re.split(r"[.\-]", v or ""))
-
-
 def update_loop() -> None:
     """Every 6h: ask PyPI what the newest yt-dlp is. The UI compares it with the
     baked version and shows a rebuild hint — yt-dlp can't self-update on a

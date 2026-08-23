@@ -59,9 +59,11 @@ RUN apt-get update \
     # nothing installs Python packages at runtime; drop the system pip too
     && rm -rf /usr/local/lib/python3*/site-packages/pip* /usr/local/lib/python3*/ensurepip
 
-# ffmpeg only: ffprobe is a second 99 MB copy of libav, and yt-dlp probes
-# with `ffmpeg -i` when it is absent (verified: tags, cover and bitrate intact).
-COPY --from=ffmpeg /ffmpeg /usr/local/bin/
+# Both binaries. ffprobe is a second 99 MB copy of libav and most of yt-dlp
+# copes without it, but FFmpegMetadataPP._fixup_chapters hard-requires it
+# whenever a site reports chapters without end times — a silent job failure
+# is not worth the saving.
+COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 COPY --from=deno /deno /usr/local/bin/deno
 COPY --from=deps /opt/venv /opt/venv
 

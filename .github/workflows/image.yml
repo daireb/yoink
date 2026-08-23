@@ -52,8 +52,8 @@ jobs:
           FORCE: ${{ inputs.force }}
         run: |
           set -eu
-          if [ "${{ github.event_name }}" != "schedule" ] || [ "$FORCE" = "true" ]; then
-            echo "build=true" >> "$GITHUB_OUTPUT"; echo "::notice::building (push or manual)"; exit 0
+          if [ "${{ github.event_name }}" = "push" ] || [ "$FORCE" = "true" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "::notice::building (push or forced)"; exit 0
           fi
           latest=$(curl -fsS https://pypi.org/pypi/yt-dlp/json | jq -r .info.version)
           if docker manifest inspect "$IMAGE:ytdlp-$latest" >/dev/null 2>&1; then
@@ -102,13 +102,15 @@ jobs:
       # 2. Does it start, answer, and carry working engines?
       - name: Smoke test
         id: smoke
+        shell: bash
         run: |
-          set -eu
+          set -euo pipefail
           docker run -d --name yoink-test --read-only --tmpfs /tmp -v tdata:/data -v tdl:/downloads -p 8080:8080 yoink:test
           for i in $(seq 1 30); do curl -fsS localhost:8080/api/health >/dev/null 2>&1 && break; sleep 2; done
           curl -fsS localhost:8080/api/health | tee health.json | jq .
           jq -e '.ok and .versions.yt_dlp and .versions.spotdl and .versions.deno' health.json >/dev/null
-          docker exec yoink-test ffmpeg -version | head -1
+          docker exec yoink-test ffmpeg -version
+          docker exec yoink-test ffprobe -version
           docker exec yoink-test spotdl --version
           docker exec yoink-test python -c "import app.spotdl_patch" 
           docker logs yoink-test 2>&1 | grep -iE "traceback|error" && exit 1 || true

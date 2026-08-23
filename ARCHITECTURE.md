@@ -178,12 +178,13 @@ public repos, reported for private ones too).
 **Image.** Multi-stage: a venv of Python deps; static `ffmpeg` from
 `mwader/static-ffmpeg` (Debian's package drags in ~400 MB of codec and GPU
 libraries); `deno` from the official `bin` image; a `python:slim` runtime
-with `tini` as the only apt package. `ffprobe` is deliberately absent — it
-is a second 99 MB copy of libav, and yt-dlp probes with `ffmpeg -i` without
-it (verified: tags, cover and bitrate intact). Bytecode caches are kept
-because without them spotDL takes twice as long to start, and that is the
-latency a user sees on every lookup. Result: 179 MB compressed, down from
-298 MB.
+with `tini` as the only apt package. `ffprobe` costs 48 MB compressed on
+its own and was nearly dropped — most of yt-dlp falls back to `ffmpeg -i`
+— but `FFmpegMetadataPP._fixup_chapters` hard-requires it whenever a site
+reports chapters without end times, and a job failing with no visible
+reason is worse than the saving. Bytecode caches are kept because without
+them spotDL takes twice as long to start, and that is the latency a user
+sees on every lookup. Result: 227 MB compressed, down from 298 MB.
 
 **Pull.** `update.sh` is `docker compose pull && docker compose up -d` with
 an image prune and a one-line report. It is meant to run from cron or a NAS
