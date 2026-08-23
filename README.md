@@ -53,18 +53,63 @@ or per file from the details view. Everything is kept for `YOINK_KEEP_DAYS`
 | `YOINK_PREFLIGHT_TIMEOUT` | `80` | seconds a link lookup may take before giving up (keep under your proxy's origin timeout) |
 | `YOINK_UPDATE_CHECK` | `1` | poll PyPI every 6 h for a newer yt-dlp and show a rebuild banner; `0` disables |
 
-## Exposing it (NAS / Cloudflare)
+## Deploying on a NAS (Cloudflare Tunnel + Access)
 
-The compose file binds to `127.0.0.1` only. To serve your LAN or the world:
+The shape: Yoink listens on `127.0.0.1:8080` on the NAS, `cloudflared` on the
+same box forwards a hostname to it, and a Cloudflare Access policy on that
+hostname demands your Google account (or an emailed code) before any request
+reaches the app. Nothing is port-forwarded and the app itself needs no
+password — the tunnel is the only way in, and Access is the lock on it.
 
-1. Change the port mapping to `"8080:8080"`.
-2. Set `YOINK_PASSWORD`.
-3. Put Cloudflare Tunnel + Access (or Tailscale) in front. Don't port-forward raw.
+1. **Clone and configure**
+   ```bash
+   git clone <your private repo> yoink && cd yoink
+   printf 'YOINK_DOWNLOADS=/volume1/music/Yoink\n' > .env   # wherever downloads should land
+   mkdir -p /volume1/music/Yoink && chown 10001:10001 /volume1/music/Yoink
+   ```
+   The container runs as uid 10001 and can only write to that folder and its
+   own data volume. Leave `YOINK_PASSWORD` unset.
 
-uvicorn runs with `--proxy-headers`, so behind an HTTPS proxy the session and
-download cookies get the `Secure` flag automatically; on plain LAN HTTP they
-still work. Link lookups are capped at `YOINK_PREFLIGHT_TIMEOUT` (80 s) so a
-slow Spotify day produces an honest "try again" instead of a Cloudflare 524.
+2. **Build and start** — the first build fetches ffmpeg, deno and Python
+   packages (a few minutes); later rebuilds are seconds.
+   ```bash
+   docker compose up -d --build
+   curl -s localhost:8080/api/health     # {"ok":true,...}
+   ```
+
+3. **Tunnel** — in Cloudflare Zero Trust → Networks → Tunnels, create a tunnel,
+   run the `cloudflared` connector on the NAS (their Docker one-liner is
+   fine), and add a public hostname, e.g. `yoink.example.com` →
+   `http://localhost:8080`. If `cloudflared` runs as a container, use
+   `network_mode: host` for it or put both on one Docker network and point
+   it at `http://yoink:8080` instead of localhost.
+
+4. **Access** — Zero Trust → Access → Applications → add a self-hosted app
+   for that hostname with a policy allowing your email (one-time PIN) or your
+   Google account. Until this exists the hostname is open to the world — do
+   this before sharing the URL anywhere.
+
+5. **Daily refresh** — a scheduled task on the NAS:
+   ```bash
+   cd /path/to/yoink && YTDLP_REFRESH=$(date +%s) docker compose build && docker compose up -d
+   ```
+   See *Keeping it working* below for why.
+
+`YOINK_THREADS` is 4 by default; with two lanes that can mean eight ffmpeg
+processes at once. Set it to 2 in `.env` on a modest NAS CPU.
+
+**If you also want it reachable by LAN IP** (without Cloudflare), change the
+port binding to `"8080:8080"` and set `YOINK_PASSWORD` — on that path the
+app password is the only lock. uvicorn trusts proxy headers, so behind HTTPS
+the session and download cookies get the `Secure` flag automatically; on
+plain LAN HTTP they still work. Link lookups are capped at
+`YOINK_PREFLIGHT_TIMEOUT` (80 s) so a slow Spotify day produces an honest
+"try again" instead of a Cloudflare 524.
+
+The container is sandboxed regardless: non-root, all capabilities dropped,
+`no-new-privileges`, read-only root filesystem, tmpfs `/tmp`. Nothing in
+the data volume needs backing up — it holds the job list, a cover-art cache
+and the cookie secret, all regenerable.
 
 ## Keeping it working
 

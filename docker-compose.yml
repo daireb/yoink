@@ -3,8 +3,9 @@
 # Quick start:   docker compose up -d --build   ->  http://localhost:8080
 #
 # Sandboxing mirrors the usual untrusted-tool posture: non-root, no
-# capabilities, read-only rootfs, loopback-only port. For a NAS deployment
-# change the port binding to "8080:8080" and set YOINK_PASSWORD.
+# capabilities, read-only rootfs, loopback-only port. On a NAS keep the port
+# loopback-only and put Cloudflare Tunnel + Access in front (see README);
+# only open the port to the LAN if you also set YOINK_PASSWORD.
 
 services:
   yoink:
