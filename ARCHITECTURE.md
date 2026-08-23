@@ -165,7 +165,11 @@ day. The daily run asks PyPI for the newest yt-dlp and looks for a matching
    spotDL, Deno and the spotapi patch all load, fail on any traceback,
 3. only then build for amd64 + arm64 and push, tagged `latest`,
    `YYYY.MM.DD` and `ytdlp-<version>`,
-4. prune old versions (GHCR storage is free today; this is hygiene).
+4. prune old versions (GHCR storage is free today; this is hygiene). The
+   step is non-fatal. Deleting versions needs the package to grant this
+   repository the **Admin** role (GHCR package → Package settings → Manage
+   Actions access); if the step ever warns about permissions, that one
+   click fixes it.
 
 The yt-dlp layer is keyed on the run id, so each build gets a fresh yt-dlp
 while everything beneath it stays cached. arm64 is built under QEMU — fine
