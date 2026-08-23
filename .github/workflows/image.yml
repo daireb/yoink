@@ -104,16 +104,20 @@ jobs:
         id: smoke
         run: |
           set -eu
-          docker run -d --name t --read-only --tmpfs /tmp -v tdata:/data -v tdl:/downloads -p 8080:8080 yoink:test
+          docker run -d --name yoink-test --read-only --tmpfs /tmp -v tdata:/data -v tdl:/downloads -p 8080:8080 yoink:test
           for i in $(seq 1 30); do curl -fsS localhost:8080/api/health >/dev/null 2>&1 && break; sleep 2; done
           curl -fsS localhost:8080/api/health | tee health.json | jq .
           jq -e '.ok and .versions.yt_dlp and .versions.spotdl and .versions.deno' health.json >/dev/null
-          docker exec t ffmpeg -version | head -1
-          docker exec t spotdl --version
-          docker exec t python -c "import app.spotdl_patch" 
-          docker logs t 2>&1 | grep -iE "traceback|error" && exit 1 || true
+          docker exec yoink-test ffmpeg -version | head -1
+          docker exec yoink-test spotdl --version
+          docker exec yoink-test python -c "import app.spotdl_patch" 
+          docker logs yoink-test 2>&1 | grep -iE "traceback|error" && exit 1 || true
           echo "ytdlp=$(jq -r .versions.yt_dlp health.json)" >> "$GITHUB_OUTPUT"
-          docker rm -f t
+          docker rm -f yoink-test
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: docker logs yoink-test 2>&1 | tail -50 || true
 
       - id: meta
         uses: docker/metadata-action@v6
