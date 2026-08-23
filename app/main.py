@@ -53,6 +53,12 @@ STALL_TIMEOUT = int(os.environ.get("YOINK_STALL_TIMEOUT", "1800"))
 PREFLIGHT_TIMEOUT = int(os.environ.get("YOINK_PREFLIGHT_TIMEOUT", "80"))
 # Poll PyPI for a newer yt-dlp and show a banner suggesting a rebuild. Set to 0 to disable.
 UPDATE_CHECK = os.environ.get("YOINK_UPDATE_CHECK", "1") != "0"
+# Image identity, set by CI ("2026.08.24-abc1234"); "dev" means built from source.
+BUILD = os.environ.get("YOINK_BUILD", "dev")
+# How far the baked yt-dlp may lag PyPI before the UI calls the install stale.
+# yt-dlp versions are release dates, so this is measured in real days. Daily
+# CI builds plus a daily pull normally keep it under 2; a weekly pull under 8.
+STALE_DAYS = 14
 MAX_CSV_ROWS = 1000
 MAX_CSV_BYTES = 5 * 1024 * 1024
 AUDIO_EXTS = {".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"}
@@ -797,7 +803,7 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "auth_required": bool(PASSWORD), "versions": TOOL_VERSIONS}
+    return {"ok": True, "auth_required": bool(PASSWORD), "versions": TOOL_VERSIONS, "build": BUILD}
 
 
 @app.post("/api/login")
@@ -1336,10 +1342,26 @@ def update_loop() -> None:
         time.sleep(6 * 3600)
 
 
+def version_date(v: Optional[str]):
+    """yt-dlp versions are dates (2026.8.19); None for anything else."""
+    import datetime
+    m = re.match(r"(\d{4})\.(\d{1,2})\.(\d{1,2})", v or "")
+    try:
+        return datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+    except ValueError:
+        return None
+
+
 def update_status() -> dict:
+    """What the UI needs to say "this install is behind": the baked yt-dlp, the
+    newest on PyPI, and the gap in days. Only a gap beyond STALE_DAYS is
+    flagged, so the normal lag of a scheduled pipeline never nags."""
     cur, latest = TOOL_VERSIONS.get("yt_dlp"), UPDATE["latest"]
+    dc, dl = version_date(cur), version_date(latest)
+    behind = max(0, (dl - dc).days) if (dc and dl) else None
     return {"current": cur, "latest": latest, "checked": UPDATE["checked"], "error": UPDATE["error"],
-            "available": bool(cur and latest and version_key(latest) > version_key(cur))}
+            "behind_days": behind, "stale": behind is not None and behind > STALE_DAYS,
+            "build": BUILD}
 
 
 if UPDATE_CHECK:

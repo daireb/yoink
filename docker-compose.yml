@@ -1,21 +1,20 @@
 # Yoink — self-hosted Spotify/YouTube download portal.
 #
-# Quick start:   docker compose up -d --build   ->  http://localhost:8080
+#   docker compose up -d        ->  http://localhost:8080
+#   ./update.sh                 ->  pull the newest image and restart
+#
+# The image is built and published by CI (ghcr.io/daireb/yoink) whenever
+# yt-dlp releases. To run from source instead: docker build -t yoink:local .
+# and set YOINK_IMAGE=yoink:local in .env.
 #
 # Sandboxing mirrors the usual untrusted-tool posture: non-root, no
-# capabilities, read-only rootfs, loopback-only port. On a NAS keep the port
-# loopback-only and put Cloudflare Tunnel + Access in front (see README);
-# only open the port to the LAN if you also set YOINK_PASSWORD.
+# capabilities, read-only rootfs, loopback-only port. Keep the port
+# loopback-only and put an identity proxy (Cloudflare Access, Tailscale) in
+# front for remote use; only open it to the LAN if you also set YOINK_PASSWORD.
 
 services:
   yoink:
-    build:
-      context: .
-      args:
-        # Bump (e.g. YTDLP_REFRESH=$(date +%s)) to pull the newest yt-dlp
-        # without rebuilding everything. See README "Keeping it working".
-        YTDLP_REFRESH: ${YTDLP_REFRESH:-0}
-    image: yoink:latest
+    image: ${YOINK_IMAGE:-ghcr.io/daireb/yoink:latest}
     container_name: yoink
     restart: unless-stopped
 

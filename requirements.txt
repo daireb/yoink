@@ -1,5 +1,5 @@
 fastapi
-uvicorn[standard]
+uvicorn
 python-multipart
 spotdl==4.5.2
 yt-dlp

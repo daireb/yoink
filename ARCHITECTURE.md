@@ -148,20 +148,71 @@ the fix is random per-login session IDs stored server-side with expiry — about
 thirty lines, and the point where per-user ownership would also become worth
 adding.
 
-## Updates
+## Distribution and updates
 
-yt-dlp lives in its own Docker layer keyed on a `YTDLP_REFRESH` build arg, so
-refreshing it rebuilds one layer in seconds instead of the whole image. The
-consequence worth knowing: that layer stays cached across an ordinary
-`docker compose build`, so only a build that changes the argument actually
-pulls a new yt-dlp. `update.sh` exists so nobody has to remember that.
+The image is the product. Nobody should need the source, a compiler, or git
+to run Yoink — a NAS with Docker and two files (`docker-compose.yml`, `.env`)
+is the whole install. This mirrors how MeTube, YoutubeDL-Material and the
+other yt-dlp frontends ship, and it is what makes "share it with a friend"
+a one-line permission change rather than a build tutorial.
 
-Nothing self-updates at runtime. The filesystem is read-only on purpose, and
-an app that downloads and executes fresh code into itself is a worse failure
-mode than a stale downloader — an in-container auto-updater was designed and
-rejected on those grounds. What is automated is *detection*: a background
-thread polls PyPI every six hours and the UI shows a banner when a newer
-release exists, turning a silent breakage into a visible one.
+**Build (`.github/workflows/image.yml`).** Runs on every push and once a
+day. The daily run asks PyPI for the newest yt-dlp and looks for a matching
+`ytdlp-<version>` tag on GHCR; if it exists, nothing happens. Otherwise:
+
+1. build for amd64 and load it into the runner,
+2. smoke-test it — start it read-only, hit `/api/health`, confirm ffmpeg,
+   spotDL, Deno and the spotapi patch all load, fail on any traceback,
+3. only then build for amd64 + arm64 and push, tagged `latest`,
+   `YYYY.MM.DD` and `ytdlp-<version>`,
+4. prune old versions (GHCR storage is free today; this is hygiene).
+
+The yt-dlp layer is keyed on the run id, so each build gets a fresh yt-dlp
+while everything beneath it stays cached. arm64 is built under QEMU — fine
+here because nothing compiles (pure-Python deps, prebuilt ffmpeg and Deno);
+native arm64 runners are available if it ever gets slow. A scheduled job
+also makes an empty commit if the repo has been idle for 45 days, because
+GitHub disables scheduled workflows after 60 idle days (documented for
+public repos, reported for private ones too).
+
+**Image.** Multi-stage: a venv of Python deps; static `ffmpeg` from
+`mwader/static-ffmpeg` (Debian's package drags in ~400 MB of codec and GPU
+libraries); `deno` from the official `bin` image; a `python:slim` runtime
+with `tini` as the only apt package. `ffprobe` is deliberately absent — it
+is a second 99 MB copy of libav, and yt-dlp probes with `ffmpeg -i` without
+it (verified: tags, cover and bitrate intact). Bytecode caches are kept
+because without them spotDL takes twice as long to start, and that is the
+latency a user sees on every lookup. Result: 179 MB compressed, down from
+298 MB.
+
+**Pull.** `update.sh` is `docker compose pull && docker compose up -d` with
+an image prune and a one-line report. It is meant to run from cron or a NAS
+task scheduler. Watchtower was the traditional answer; its upstream was
+archived in December 2025 and it needs the Docker socket, so a scheduled
+pull is both the current consensus and the lower-privilege choice.
+
+**Why no self-update inside the container.** The filesystem is read-only on
+purpose, and an app that downloads and executes fresh code into itself is a
+worse failure mode than a stale downloader. An in-container updater was
+designed and rejected on those grounds; so was a host-side rebuild cron,
+which needs the source on every machine and a cache-busting incantation
+that users forget.
+
+**Why the banner stays.** Comparable projects have no in-app notice and rely
+on Watchtower. But a scheduled pipeline fails silently — a revoked token, a
+disabled schedule, a NAS that lost its cron — and "I don't have to think
+about it" needs one signal for that case. Yoink polls PyPI every six hours
+and compares the newest yt-dlp's release date with the one it runs. Only a
+gap beyond 14 days (`STALE_DAYS`) is surfaced: a scheduled pull normally
+keeps it under a week, so the banner means "your updates have stopped", not
+"a release exists". Source builds get the rebuild command instead of the
+pull command.
+
+**Access while private.** GHCR only accepts classic personal access tokens
+(`read:packages`); fine-grained tokens cannot read packages at all. A
+friend needs either collaborator access on the repo or a Read role on the
+package, plus their own token. Making the package public is one-way, and
+public GHCR images pull anonymously.
 
 ## Known limitations
 
@@ -174,6 +225,12 @@ release exists, turning a silent breakage into a visible one.
   the job folder until retention sweeps it.
 
 ## Development
+
+```bash
+docker build -t yoink:local . && YOINK_IMAGE=yoink:local docker compose up -d
+```
+
+or outside Docker:
 
 ```bash
 pip install -r requirements.txt

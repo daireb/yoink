@@ -1,0 +1,185 @@
+# Builds the Yoink image and publishes it to GHCR.
+#
+# Runs on every push to main, and once a day on a schedule. The scheduled run
+# only builds when PyPI has a yt-dlp release that isn't published yet — that
+# is the one dependency that goes stale, and the whole point of the pipeline
+# is that nobody has to notice when it does. Each image is smoke-tested on
+# amd64 before the multi-arch push, so a broken build never becomes :latest.
+#
+# Tags per build:  latest · YYYY.MM.DD · ytdlp-<version>   (pin any of them)
+
+name: image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', '.env.example', 'update.sh', 'LICENSE']
+  schedule:
+    - cron: '23 4 * * *'        # daily, 04:23 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if the published yt-dlp is already current
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  check:
+    name: Is a build needed?
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: decide
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$FORCE" = "true" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "::notice::building (push or manual)"; exit 0
+          fi
+          latest=$(curl -fsS https://pypi.org/pypi/yt-dlp/json | jq -r .info.version)
+          if docker manifest inspect "$IMAGE:ytdlp-$latest" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"; echo "::notice::yt-dlp $latest already published, nothing to do"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "::notice::yt-dlp $latest is new, building"
+          fi
+
+  build:
+    name: Build, test, publish
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: ids
+        run: |
+          echo "date=$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+          echo "build=$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # 1. Native-arch build, loaded into the runner's Docker, for the smoke test.
+      - name: Build (amd64, for testing)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: yoink:test
+          build-args: |
+            YTDLP_REFRESH=${{ github.run_id }}
+            YOINK_BUILD=${{ steps.ids.outputs.build }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 2. Does it start, answer, and carry working engines?
+      - name: Smoke test
+        id: smoke
+        run: |
+          set -eu
+          docker run -d --name t --read-only --tmpfs /tmp -v tdata:/data -v tdl:/downloads -p 8080:8080 yoink:test
+          for i in $(seq 1 30); do curl -fsS localhost:8080/api/health >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS localhost:8080/api/health | tee health.json | jq .
+          jq -e '.ok and .versions.yt_dlp and .versions.spotdl and .versions.deno' health.json >/dev/null
+          docker exec t ffmpeg -version | head -1
+          docker exec t spotdl --version
+          docker exec t python -c "import app.spotdl_patch" 
+          docker logs t 2>&1 | grep -iE "traceback|error" && exit 1 || true
+          echo "ytdlp=$(jq -r .versions.yt_dlp health.json)" >> "$GITHUB_OUTPUT"
+          docker rm -f t
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.ids.outputs.date }}
+            type=raw,value=ytdlp-${{ steps.smoke.outputs.ytdlp }}
+          labels: |
+            org.opencontainers.image.title=Yoink
+            org.opencontainers.image.description=Self-hosted Spotify/YouTube → MP3 portal
+            org.opencontainers.image.version=${{ steps.ids.outputs.build }}
+
+      # 3. The real thing: both architectures, pushed. amd64 layers come from cache.
+      - name: Build and push (amd64 + arm64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            YTDLP_REFRESH=${{ github.run_id }}
+            YOINK_BUILD=${{ steps.ids.outputs.build }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published \`${{ steps.ids.outputs.build }}\`"
+            echo "- yt-dlp **${{ steps.smoke.outputs.ytdlp }}** · spotDL $(jq -r .versions.spotdl health.json) · deno $(jq -r .versions.deno health.json)"
+            echo '- tags: `latest` `${{ steps.ids.outputs.date }}` `ytdlp-${{ steps.smoke.outputs.ytdlp }}`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Tidy old versions. GHCR storage is free today, so this is hygiene, not cost.
+      - name: Prune old images
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          keep-n-tagged: 6
+          delete-untagged: true
+          exclude-tags: latest
+
+  # GitHub disables scheduled workflows after 60 days without repository
+  # activity (documented for public repos; reports suggest private too). A
+  # commit every ~6 weeks keeps the daily check alive without anyone touching
+  # the repo. Pushes made with GITHUB_TOKEN don't trigger workflows, so no loop.
+  keepalive:
+    name: Keep schedule alive
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          set -eu
+          last=$(git log -1 --format=%ct)
+          age=$(( ( $(date +%s) - last ) / 86400 ))
+          echo "last commit ${age} days ago"
+          if [ "$age" -ge 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "ci: keep scheduled builds enabled"
+            git push
+          fi

@@ -32,19 +32,26 @@ for a week, and clean themselves up.
 
 ## Quick start
 
-You need Docker with Compose v2. Works on x86-64 and ARM64.
+You need Docker with Compose v2 on x86-64 or ARM64 — a NAS, a Raspberry Pi,
+a spare laptop. Nothing is built on your machine: CI publishes a ready image.
 
 ```bash
-git clone https://github.com/daireb/yoink && cd yoink
-cp .env.example .env          # optional: pick where downloads land
-docker compose up -d --build
+mkdir yoink && cd yoink
+# grab docker-compose.yml and .env.example from this repo into that folder
+cp .env.example .env          # set YOINK_DOWNLOADS to where audio should land
+docker compose up -d
 ```
 
-Open **http://localhost:8080**. The first build takes a few minutes (ffmpeg,
-Deno and Python packages); later ones are seconds.
+Open **http://localhost:8080**.
+
+> **While the image is private** you need to log in once before the pull:
+> `docker login ghcr.io -u <github-user>` with a *classic* personal access
+> token that has the `read:packages` scope (fine-grained tokens can't read
+> packages). Set it to never expire so a scheduled update doesn't silently
+> stop a year from now. Once the image is public this step goes away.
 
 By default the port is published on `127.0.0.1` only, so nothing outside the
-machine can reach it — see below before changing that.
+machine can reach it — see *Putting it on the internet* before changing that.
 
 ## Configuration
 
@@ -52,13 +59,14 @@ Copy `.env.example` to `.env`; it documents every setting inline.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `YOINK_IMAGE` | `ghcr.io/daireb/yoink:latest` | image to run; pin a date tag, or `yoink:local` for your own build |
 | `YOINK_DOWNLOADS` | `./downloads` | host folder where audio lands (must be writable by uid 10001) |
 | `YOINK_KEEP_DAYS` | `7` | days a finished download is kept |
 | `YOINK_PASSWORD` | *(unset — no login)* | password for the web UI |
 | `YOINK_SECRET` | auto-generated | cookie-signing secret override |
 | `YOINK_THREADS` | `4` | parallel downloads within one job |
 | `YOINK_PREFLIGHT_TIMEOUT` | `80` | seconds a link lookup may take before giving up |
-| `YOINK_UPDATE_CHECK` | `1` | poll PyPI for newer yt-dlp and show a rebuild banner |
+| `YOINK_UPDATE_CHECK` | `1` | check PyPI for yt-dlp releases and warn when this install has fallen behind |
 
 Per-request defaults — 320/192/128 kbps, MP3/M4A/Opus/FLAC, track numbering —
 live behind the gear icon in the UI and are saved in your browser.
@@ -94,36 +102,44 @@ the `Secure` flag automatically over HTTPS.
 ## Keeping it working
 
 yt-dlp is the part that goes stale: YouTube changes something every few weeks
-and older releases stop working. The container has a read-only filesystem and
-deliberately does not update itself, so **updating is a rebuild you run on the
-host** — there is no automatic update inside the container. Use the included
-script:
+and older releases stop working. Yoink handles that upstream so you don't
+have to — CI checks PyPI daily and, whenever yt-dlp has released, builds a
+fresh image, smoke-tests it, and publishes it as `latest` (also tagged by date
+and by yt-dlp version, so you can pin if a release ever misbehaves).
+
+Your side is one command, run on a schedule:
 
 ```bash
-./update.sh
+./update.sh        # = docker compose pull && docker compose up -d, plus cleanup
 ```
 
-It rebuilds (only the yt-dlp layer is redone, so it takes seconds), restarts,
-and prints the new version. To run it automatically, add it to cron on the
-host — weekly is plenty:
+Weekly is plenty; daily is fine. On a NAS, use its task scheduler to run the
+script as the Docker user; elsewhere, cron:
 
 ```cron
-0 4 * * 0  /path/to/yoink/update.sh >> /var/log/yoink-update.log 2>&1
+0 4 * * *  /path/to/yoink/update.sh >> /var/log/yoink-update.log 2>&1
 ```
 
-On a Synology or QNAP NAS, use the Task Scheduler UI to run the same script
-as root instead of editing crontab.
+It prints one line (`current · 2026.08.24-3f1c9a2 · yt-dlp 2026.8.24` or
+`updated → …`) so the log stays readable. A plain `docker compose restart`
+updates nothing — yt-dlp is part of the image.
 
-Two things that do **not** update yt-dlp, despite appearances:
+If the schedule ever breaks — token revoked, NAS offline, CI stuck — the UI
+tells you: once this install's yt-dlp trails the newest release by more than
+two weeks, a banner appears above the list with the command to run. During
+normal operation you will never see it. Versions and the build id are in
+**Options**.
 
-- `docker compose restart` — the image is unchanged.
-- `docker compose up -d --build` — the yt-dlp layer is cached and stays
-  cached until the `YTDLP_REFRESH` build argument changes, which is exactly
-  what `update.sh` does.
+### Running from source
 
-The only thing Yoink automates is *noticing*: it checks PyPI every six hours
-and shows a banner when a newer yt-dlp is out, so a stale install tells you
-rather than just failing. Set `YOINK_UPDATE_CHECK=0` to turn that off.
+```bash
+docker build -t yoink:local .
+echo YOINK_IMAGE=yoink:local >> .env
+docker compose up -d
+```
+
+Rebuild to update; `--build-arg YTDLP_REFRESH=$(date +%s)` forces a fresh
+yt-dlp without busting the rest of the cache.
 
 ## Audio quality, honestly
 
@@ -152,10 +168,11 @@ For the design, the engine quirks it works around, and the security model,
 see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 ```
-app/main.py            backend + workers (single file)
-app/static/index.html  UI (single file, no build step)
-app/spotdl_patch.py    metadata-lookup cache for spotDL
-update.sh              rebuild with the latest yt-dlp (run on the host)
+app/main.py                  backend + workers (single file)
+app/static/index.html        UI (single file, no build step)
+app/spotdl_patch.py          metadata-lookup cache for spotDL
+.github/workflows/image.yml  builds, tests and publishes the image
+update.sh                    pull the newest image (run on the host)
 ```
 
 ## Credits

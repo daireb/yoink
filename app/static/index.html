@@ -293,10 +293,10 @@
 </div></div>
 
 <div class="overlay" id="update"><div class="card sheet" style="width:min(480px,100%)">
-  <div class="sheet-head"><h2>Update yt-dlp</h2><button class="ibtn" onclick="closeUpdate()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="sheet-head"><h2>Update Yoink</h2><button class="ibtn" onclick="closeUpdate()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
   <div class="sub" id="uText"></div>
-  <pre class="cmd">YTDLP_REFRESH=$(date +%s) docker compose build &amp;&amp; docker compose up -d</pre>
-  <div class="sub">Takes a few seconds — everything except yt-dlp is cached. A plain restart won't do it; yt-dlp is part of the image.</div>
+  <pre class="cmd" id="uCmd"></pre>
+  <div class="sub" id="uNote"></div>
 </div></div>
 
 <div class="overlay" id="details"><div class="card sheet">
@@ -828,20 +828,31 @@ let seq = 0;
 // banner above the list that opens the rebuild explainer.
 function paintVersions(v, u) {
   const el = $('versions'); if (!el || !v) return;
-  const avail = !!(u && u.available);
+  const stale = !!(u && u.stale);
   const parts = [];
-  if (v.yt_dlp) parts.push('yt-dlp ' + v.yt_dlp + (avail ? ` → ${u.latest} available` : ''));
+  if (v.yt_dlp) parts.push('yt-dlp ' + v.yt_dlp + (stale ? ` (${u.behind_days} days behind)` : ''));
   if (v.spotdl) parts.push('spotDL ' + v.spotdl);
+  if (u && u.build) parts.push('build ' + u.build);
   el.textContent = parts.join(' · ');
-  el.classList.toggle('warn', avail);
+  el.classList.toggle('warn', stale);
 }
+// The banner means "your update pipeline has missed a beat", not "a release
+// exists": it only shows once the baked yt-dlp trails PyPI by more than the
+// normal lag of a scheduled pull. Source builds get the rebuild command instead.
 function paintUpdate(u) {
   const n = $('notice');
-  const avail = !!(u && u.available);
-  n.hidden = !avail;
-  if (!avail) return;
-  n.innerHTML = `<span>yt-dlp ${esc(u.latest)} is out — this Yoink has ${esc(u.current)}. Rebuild to update.</span><span class="arrow">→</span>`;
-  $('uText').textContent = `Yoink downloads through yt-dlp, and YouTube changes break older releases within weeks. This image has ${u.current}; ${u.latest} is available. To update, run this where Yoink is installed:`;
+  const stale = !!(u && u.stale);
+  n.hidden = !stale;
+  if (!stale) return;
+  const fromSource = u.build === 'dev';
+  n.innerHTML = `<span>This Yoink is ${esc(u.behind_days)} days behind on yt-dlp — downloads may start failing. ${fromSource ? 'Rebuild' : 'Update'} it.</span><span class="arrow">→</span>`;
+  $('uText').textContent = `Yoink downloads through yt-dlp, and YouTube changes break older releases within weeks. This install has ${u.current}; ${u.latest} has been out for a while, so whatever normally updates it has stopped. Run this where Yoink is installed:`;
+  $('uCmd').textContent = fromSource
+    ? 'docker build -t yoink:local --build-arg YTDLP_REFRESH=$(date +%s) . && docker compose up -d'
+    : 'docker compose pull && docker compose up -d';
+  $('uNote').textContent = fromSource
+    ? 'Only the yt-dlp layer is rebuilt, so it takes seconds.'
+    : 'A plain restart won\'t do it — yt-dlp is part of the image. If you run this on a schedule and still see this, the schedule is broken.';
 }
 
 async function refresh() {
