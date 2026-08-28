@@ -216,6 +216,11 @@
   .help { color: var(--dim); font-size: 12.5px; margin: 4px 0 0 25px; }
   .help.versions { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--line); white-space: pre-line; font-family: var(--mono); font-size: 12px; }
   .help.versions.warn { color: var(--warn); }
+  /* watch-before-downloading: a plain video lightbox */
+  .screen { max-width: min(1100px, 94vw); margin: 0; display: grid; gap: 10px; }
+  .screen video { width: 100%; max-height: 78vh; border-radius: 12px; background: #000; outline: none; }
+  .screen figcaption { color: var(--dim); font-family: var(--mono); font-size: 12.5px; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .notice { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin: 0 0 14px; padding: 10px 14px;
     background: rgba(251,191,36,.06); border: 1px solid rgba(251,191,36,.3); border-radius: 10px; color: var(--warn);
     font-family: inherit; font-weight: 500; font-size: 13.5px; line-height: 1.4; cursor: pointer; transition: border-color .15s, background .15s; }
@@ -304,6 +309,13 @@
   <pre class="cmd" id="uCmd"></pre>
   <div class="sub" id="uNote"></div>
 </div></div>
+
+<div class="overlay top" id="theater">
+  <figure class="screen">
+    <video id="theaterVideo" controls playsinline preload="metadata"></video>
+    <figcaption id="theaterTitle"></figcaption>
+  </figure>
+</div>
 
 <div class="overlay" id="details"><div class="card sheet">
   <div class="sheet-head"><h2 id="dTitle"></h2><button class="ibtn" onclick="closeDetails()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
@@ -490,13 +502,14 @@ document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) { closeImport(); uploadCsv(f); } });
 // click on the backdrop closes the sheet (mousedown on the overlay itself, so a
 // drag-select that ends outside the sheet doesn't dismiss it)
-const closers = { options: closeOptions, details: closeDetails, confirm: closeConfirm, import: closeImport, update: closeUpdate };
+const closers = { options: closeOptions, details: closeDetails, confirm: closeConfirm, import: closeImport, update: closeUpdate, theater: closeTheater };
 for (const [id, close] of Object.entries(closers)) {
   $(id).addEventListener('mousedown', e => { if (e.target === e.currentTarget) close(); });
 }
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if ($('options').classList.contains('show')) closeOptions();
+  if ($('theater').classList.contains('show')) closeTheater();
+  else if ($('options').classList.contains('show')) closeOptions();
   else if ($('import').classList.contains('show')) closeImport();
   else if ($('update').classList.contains('show')) closeUpdate();
   else if (detailsId) closeDetails();
@@ -510,7 +523,23 @@ const fileUrl = (id, name) => `/api/jobs/${id}/files/${encodeURIComponent(name)}
 const currentPath = () => player.src ? decodeURIComponent(new URL(player.src).pathname) : null;
 const jobOwns = (id) => (currentPath() || '').startsWith(`/api/jobs/${id}/files/`);
 const jobPlaying = (id) => jobOwns(id) && !player.paused;
+const theaterVideo = () => $('theaterVideo');
+function openTheater(id, name) {
+  if (!player.paused) player.pause();            // one thing playing at a time
+  const v = theaterVideo();
+  v.src = fileUrl(id, name);
+  $('theaterTitle').textContent = name;
+  $('theater').classList.add('show');
+  v.play().catch(() => {});
+}
+function closeTheater() {
+  const v = theaterVideo();
+  v.pause(); v.removeAttribute('src'); v.load();  // stop streaming, drop the connection
+  $('theater').classList.remove('show');
+}
+
 function toggle(id, name) {           // a specific file (details modal)
+  if (isVideo(name)) { openTheater(id, name); return; }
   const url = fileUrl(id, name);
   if (currentPath() === decodeURIComponent(url) && !player.paused) player.pause();
   else if (currentPath() === decodeURIComponent(url)) player.play().catch(() => {});
@@ -632,7 +661,7 @@ function updateCard(el, j) {
   if (j.cover) { if (img.getAttribute('src') !== j.cover) { img.hidden = false; img.src = j.cover; } }
   else show(img, false);
   const play = q('.play');
-  show(play, ready && !!j.first_file && !isVideo(j.first_file));
+  show(play, ready && !!j.first_file);
   play.dataset.file = j.first_file || '';
   q('.coverwrap .src-glyph').style.visibility = (img.hidden || !j.cover) ? '' : 'hidden';
 
@@ -699,7 +728,7 @@ $('jobs').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]'); if (!btn) return;
   const card = btn.closest('.job'); const id = card.dataset.id; const j = JOBS[id];
   switch (btn.dataset.act) {
-    case 'play': toggleJob(id, btn.dataset.file); break;
+    case 'play': isVideo(btn.dataset.file) ? openTheater(id, btn.dataset.file) : toggleJob(id, btn.dataset.file); break;
     case 'download': startDownload(id, btn.dataset.url); break;
     case 'retry': act(id, 'POST', '/retry'); break;
     case 'again': tryAgain(id); break;
@@ -836,7 +865,7 @@ async function renderDetails() {
   if (detailsId !== id) return;
   $('dTitle').textContent = d.title;
   $('dMeta').innerHTML = metaHtml(d);
-  const files = d.files.map(f => `<div class="file"><span class="name">${isVideo(f.name) ? '' : `<button class="fplay" data-play="${esc(fileUrl(d.id, f.name))}" aria-label="Preview" onclick='toggle("${d.id}",${JSON.stringify(f.name)})'>${icon('i-play')}</button>`}<a href="${fileUrl(d.id, f.name)}">${esc(f.name)}</a></span><span class="size">${mb(f.size)}</span></div>`).join('');
+  const files = d.files.map(f => `<div class="file"><span class="name"><button class="fplay" data-play="${esc(fileUrl(d.id, f.name))}" aria-label="Preview" onclick='toggle("${d.id}",${JSON.stringify(f.name)})'>${icon('i-play')}</button><a href="${fileUrl(d.id, f.name)}">${esc(f.name)}</a></span><span class="size">${mb(f.size)}</span></div>`).join('');
   if ($('dFiles').innerHTML !== files) { $('dFiles').innerHTML = files; paintPlayState(); }
   const log = d.log || '(no output yet)';
   if ($('dLog').textContent !== log) $('dLog').textContent = log;
