@@ -33,3 +33,10 @@ def test_index_serves_stamped_shell(client):
 def test_manifest_and_sw(client):
     assert client.get("/manifest.webmanifest").status_code == 200
     assert "addEventListener" in client.get("/sw.js").text
+
+
+def test_video_rejected_for_spotify_and_csv(logged_in):
+    r = logged_in.post("/api/jobs", json={"input": "https://open.spotify.com/track/AAA", "format": "mp4"})
+    assert r.status_code == 400 and "video" in r.json()["detail"]
+    r = logged_in.post("/api/jobs/csv?format=mp4", files={"file": ("x.csv", b"Track URI\nspotify:track:AAA1\n")})
+    assert r.status_code == 400

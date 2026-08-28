@@ -12,7 +12,9 @@ Key capabilities:
   Music by [spotDL](https://github.com/spotDL/spotify-downloader), tagged
   with real Spotify metadata and cover art. No Spotify account or API keys.
 * **YouTube and 1,700+ other sites**, via
-  [yt-dlp](https://github.com/yt-dlp/yt-dlp). Free-text search works too.
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp). Free-text search works too —
+  and video links can be kept as **actual video** (MP4): paste one and the
+  Request button splits into Audio / Video.
 * **Playlists come out ordered** — `01 - Artist - Title.mp3` plus an
   `.m3u8`, so dumb players (car USB, sports headphones) play them in order.
 * **Private playlists and Liked Songs** via CSV import from

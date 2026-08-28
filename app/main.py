@@ -62,7 +62,10 @@ STALE_DAYS = 14
 MAX_CSV_ROWS = 1000
 MAX_CSV_BYTES = 5 * 1024 * 1024
 AUDIO_EXTS = {".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"}
-FORMATS = ("mp3", "m4a", "opus", "flac")
+VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
+MEDIA_EXTS = AUDIO_EXTS | VIDEO_EXTS
+# "mp4" is video mode: keep the actual video instead of extracting audio.
+FORMATS = ("mp3", "m4a", "opus", "flac", "mp4")
 BITRATES = (320, 192, 128)
 
 LOG_DIR = DATA_DIR / "logs"
@@ -333,7 +336,7 @@ def match_files(expected: list[dict], files: list[Path]) -> tuple[dict[int, Path
 def list_audio_files(job_dir: Path) -> list[Path]:
     if not job_dir.is_dir():
         return []
-    return sorted(p for p in job_dir.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTS)
+    return sorted(p for p in job_dir.iterdir() if p.is_file() and p.suffix.lower() in MEDIA_EXTS)
 
 
 def finalize_job_dir(job_id: str, expected: list[dict], numbered: bool, job_dir: Path) -> list[dict]:
@@ -426,14 +429,22 @@ def spotdl_download_cmd(spotdl_file: Path, fmt: str, bitrate: int, job_dir: Path
 
 def ytdlp_download_cmd(url: str, fmt: str, bitrate: int, job_dir: Path, is_playlist: bool) -> list[str]:
     tmpl = "%(title)s.%(ext)s"
-    cmd = ["yt-dlp", "--extract-audio", "--audio-format", fmt,
-           "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
-           "--parse-metadata", "%(artist,uploader|)s:%(meta_artist)s",
-           "--newline", "--no-colors", "--no-overwrites",
-           "-o", str(job_dir / tmpl)]
+    if fmt == "mp4":
+        # Video mode: yt-dlp's mp4 preset (H.264/AAC in mp4, remuxed not
+        # re-encoded where possible) — plays everywhere; bitrate is ignored.
+        cmd = ["yt-dlp", "-t", "mp4",
+               "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
+               "--newline", "--no-colors", "--no-overwrites",
+               "-o", str(job_dir / tmpl)]
+    else:
+        cmd = ["yt-dlp", "--extract-audio", "--audio-format", fmt,
+               "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
+               "--parse-metadata", "%(artist,uploader|)s:%(meta_artist)s",
+               "--newline", "--no-colors", "--no-overwrites",
+               "-o", str(job_dir / tmpl)]
+        if fmt == "mp3":
+            cmd += ["--audio-quality", f"{bitrate}K"]
     cmd += ["--yes-playlist"] if is_playlist else ["--no-playlist"]
-    if fmt == "mp3":
-        cmd += ["--audio-quality", f"{bitrate}K"]
     cmd.append(url)
     return cmd
 
@@ -901,7 +912,8 @@ async def _preflight(request: Request):
             raise HTTPException(400, str(exc) or "couldn't read that link")
         return {"kind": kind, "token": None, "title": info["title"], "count": len(info["tracks"]),
                 "tracks": [t["name"] for t in info["tracks"][:300]],
-                "est_mb": est_mb(info["tracks"], bitrate), "is_playlist": info["is_playlist"]}
+                "est_mb": None if fmt == "mp4" else est_mb(info["tracks"], bitrate),
+                "is_playlist": info["is_playlist"]}
     token = uuid.uuid4().hex[:16]
     out = PREFLIGHT_DIR / f"{token}.spotdl"
     cmd = ["spotdl", "save", text, "--save-file", str(out), *SPOTDL_FLAGS]
@@ -951,6 +963,8 @@ async def submit(request: Request):
     text = clean_input(str(body.get("input", "")))
     fmt, bitrate, numbered = parse_options(body)
     kind = detect_kind(text)
+    if fmt == "mp4" and kind != "media":
+        raise HTTPException(400, "video is only for video links — Spotify and search are audio")
     if kind == "media":
         await asyncio.to_thread(assert_public_url, text)
     title = body.get("title") or (text if len(text) < 80 else text[:77] + "...")
@@ -1013,6 +1027,8 @@ def parse_csv(raw: bytes) -> tuple[list[str], list[dict]]:
 async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
                      numbered: Optional[int] = None, dry_run: int = 0):
     fmt, br, num = parse_options({"format": format, "bitrate": bitrate, "numbered": numbered})
+    if fmt == "mp4":
+        raise HTTPException(400, "video is only for video links — CSV imports are audio")
     raw = await file.read(MAX_CSV_BYTES + 1)
     if len(raw) > MAX_CSV_BYTES:
         raise HTTPException(413, "CSV too large (5MB max)")
@@ -1175,7 +1191,8 @@ def download_file(job_id: str, name: str, request: Request, t: Optional[str] = N
         raise HTTPException(404, "no such job")
     p = safe_file(Path(row["dir"]), name)
     size = p.stat().st_size
-    media_type = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".opus": "audio/ogg",
+    media_type = {".mp4": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska",
+                  ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".opus": "audio/ogg",
                   ".ogg": "audio/ogg", ".flac": "audio/flac", ".wav": "audio/wav"}.get(p.suffix.lower(), "application/octet-stream")
     rng = request.headers.get("range")
     m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng or "")

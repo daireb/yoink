@@ -79,12 +79,20 @@
   .importbtn:hover { color: var(--text); border-color: var(--dim); filter: none; }
   .importbtn svg.i { width: 15px; height: 15px; }
   .field input:focus { border-color: var(--accent); }
+  .goRow { position: absolute; right: 7px; top: 7px; bottom: 7px; display: flex; gap: 6px; }
   .field .go {
-    position: absolute; right: 7px; top: 7px; bottom: 7px; width: 42px; border-radius: 9px;
+    width: 42px; border-radius: 9px; height: 100%;
     background: var(--accent2); color: #fff; border: 0; cursor: pointer; display: grid; place-items: center; padding: 0;
+    font-size: 13.5px; font-weight: 600; transition: width .18s ease;
   }
   .field .go:hover { filter: brightness(1.1); }
   .field .go:disabled { opacity: .6; cursor: default; filter: none; }
+  /* pasting a video-capable link splits Request into Audio / Video */
+  .field .go.vid { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 500; width: auto; padding: 0 13px; }
+  .field .go.vid:hover { color: var(--text); border-color: var(--dim); filter: none; }
+  .field.media .go { width: auto; padding: 0 13px; }
+  .field.media input { padding-right: 152px; }
+  @media (prefers-reduced-motion: reduce) { .field .go { transition: none; } }
   .err { color: var(--err); font-size: 13.5px; margin: 8px 16px 0; }
   .err.soft { color: var(--dim); }
   /* the field is locked while its content is being looked up / requested */
@@ -313,8 +321,11 @@
 
   <div class="field">
     <input type="text" id="input" placeholder="Paste a Spotify or YouTube link, or search…"
-           autocomplete="off" autocapitalize="off" onkeydown="if(event.key==='Enter')submit()">
-    <button class="go" id="goBtn" onclick="submit()" aria-label="Request"><svg class="i"><use href="#i-arrow"/></svg></button>
+           autocomplete="off" autocapitalize="off" onkeydown="if(event.key==='Enter')submit()" oninput="syncGo()">
+    <div class="goRow">
+      <button class="go vid" id="goVid" onclick="submit('mp4')" hidden>Video</button>
+      <button class="go" id="goBtn" onclick="submit()" aria-label="Request"><svg class="i"><use href="#i-arrow"/></svg></button>
+    </div>
   </div>
   <div class="under"><div class="err" id="subErr"></div><button class="importbtn" onclick="openImport()"><svg class="i"><use href="#i-file"/></svg>Import private playlist</button></div>
   <input type="file" id="csvfile" accept=".csv,text/csv" style="display:none">
@@ -374,8 +385,8 @@ async function doLogin() {
 // ---- request flow: look up, confirm if it's more than one song ---------------
 let slowTimer = null;
 function busy(on) {
-  $('goBtn').disabled = on;
-  $('goBtn').innerHTML = on ? spin() : icon('i-arrow');
+  $('goBtn').disabled = $('goVid').disabled = on;
+  if (on) { $('goBtn').innerHTML = spin(); } else { syncGo(); }
   $('input').readOnly = on;                      // it's clear what's being worked on
   clearTimeout(slowTimer);
   $('subErr').classList.remove('soft');
@@ -386,12 +397,24 @@ function fail(msg) { $('subErr').classList.remove('soft'); $('subErr').textConte
 // only things that can be many songs need the confirm sheet
 const needsConfirm = (t) => /open\.spotify\.com\/(playlist|album|artist)\//.test(t) || /[?&]list=|\/playlist\?/.test(t);
 
-async function submit() {
+// A non-Spotify URL can be kept as actual video; only then does the split show.
+const isVideo = (n) => /\.(mp4|webm|mkv)$/i.test(n || '');
+const canVideo = (t) => /^https?:\/\//i.test(t) && !/open\.spotify\.com/.test(t) && !/^spotify:/.test(t);
+function syncGo() {
+  const media = canVideo($('input').value.trim());
+  $('goVid').hidden = !media;
+  $('goBtn').innerHTML = media ? 'Audio' : '<svg class="i"><use href="#i-arrow"/></svg>';
+  $('goBtn').setAttribute('aria-label', media ? 'Request audio' : 'Request');
+  document.querySelector('.field').classList.toggle('media', media);
+}
+
+async function submit(mode) {
   const input = $('input').value.trim();
   if (!input || $('goBtn').disabled) return;
   fail(''); busy(true);
   try {
     const o = opts();
+    if (mode === 'mp4' && canVideo(input)) o.format = 'mp4';
     if (!needsConfirm(input)) {                  // single track / video / search: request immediately
       pending = { kind: 'link', input, token: null, title: null, ...o };
       await confirmGo();
@@ -425,7 +448,7 @@ async function uploadCsv(file) {
 
 function showConfirm(p) {
   $('cTitle').textContent = p.title;
-  $('cSub').textContent = `${plural(p.count, 'song')} · about ${p.est_mb} MB`;
+  $('cSub').textContent = p.est_mb == null ? `${plural(p.count, 'video')}` : `${plural(p.count, 'song')} · about ${p.est_mb} MB`;
   $('cTracks').innerHTML = p.tracks.slice(0, 12).map(t => `<li>${esc(t)}</li>`).join('')
     + (p.count > 12 ? `<li style="list-style:none;margin-left:-20px">… and ${p.count - 12} more</li>` : '');
   renderConfirmOpts();
@@ -450,7 +473,7 @@ async function confirmGo() {
       r = await api('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ input: p.input, token: p.token, title: p.title, format: p.format, bitrate: p.bitrate, numbered: p.numbered }) });
     }
-    if (r.ok) { $('input').value = ''; refresh(); } else fail(await detailOf(r));
+    if (r.ok) { $('input').value = ''; syncGo(); refresh(); } else fail(await detailOf(r));
   } catch (e) { if (e.message !== 'auth') fail('network error'); }
 }
 
@@ -609,7 +632,7 @@ function updateCard(el, j) {
   if (j.cover) { if (img.getAttribute('src') !== j.cover) { img.hidden = false; img.src = j.cover; } }
   else show(img, false);
   const play = q('.play');
-  show(play, ready && !!j.first_file);
+  show(play, ready && !!j.first_file && !isVideo(j.first_file));
   play.dataset.file = j.first_file || '';
   q('.coverwrap .src-glyph').style.visibility = (img.hidden || !j.cover) ? '' : 'hidden';
 
@@ -813,7 +836,7 @@ async function renderDetails() {
   if (detailsId !== id) return;
   $('dTitle').textContent = d.title;
   $('dMeta').innerHTML = metaHtml(d);
-  const files = d.files.map(f => `<div class="file"><span class="name"><button class="fplay" data-play="${esc(fileUrl(d.id, f.name))}" aria-label="Preview" onclick='toggle("${d.id}",${JSON.stringify(f.name)})'>${icon('i-play')}</button><a href="${fileUrl(d.id, f.name)}">${esc(f.name)}</a></span><span class="size">${mb(f.size)}</span></div>`).join('');
+  const files = d.files.map(f => `<div class="file"><span class="name">${isVideo(f.name) ? '' : `<button class="fplay" data-play="${esc(fileUrl(d.id, f.name))}" aria-label="Preview" onclick='toggle("${d.id}",${JSON.stringify(f.name)})'>${icon('i-play')}</button>`}<a href="${fileUrl(d.id, f.name)}">${esc(f.name)}</a></span><span class="size">${mb(f.size)}</span></div>`).join('');
   if ($('dFiles').innerHTML !== files) { $('dFiles').innerHTML = files; paintPlayState(); }
   const log = d.log || '(no output yet)';
   if ($('dLog').textContent !== log) $('dLog').textContent = log;

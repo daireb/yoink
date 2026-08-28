@@ -62,3 +62,13 @@ def test_safe_file_blocks_traversal(main, tmp_path):
     with pytest.raises(HTTPException) as e:
         main.safe_file(tmp_path, "nope.mp3")
     assert e.value.status_code == 404
+
+
+def test_parse_options_accepts_mp4(main):
+    assert main.parse_options({"format": "mp4"}) == ("mp4", 320, None)
+
+
+def test_list_audio_files_includes_video(main, tmp_path):
+    for n in ("a.mp3", "b.mp4", "c.webm", "notes.txt"):
+        (tmp_path / n).write_bytes(b"")
+    assert [p.name for p in main.list_audio_files(tmp_path)] == ["a.mp3", "b.mp4", "c.webm"]

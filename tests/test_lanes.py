@@ -29,3 +29,11 @@ def test_lane_for(main, kind, text, total, lane):
 ])
 def test_detect_kind(main, text, kind):
     assert main.detect_kind(text) == kind
+
+
+def test_video_mode_only_for_media(main):
+    cmd = main.ytdlp_download_cmd("https://youtube.com/watch?v=x", "mp4", 320, __import__("pathlib").Path("/tmp"), False)
+    assert "-t" in cmd and "mp4" in cmd
+    assert "--extract-audio" not in cmd and "--audio-quality" not in cmd
+    audio = main.ytdlp_download_cmd("https://youtube.com/watch?v=x", "mp3", 192, __import__("pathlib").Path("/tmp"), False)
+    assert "--extract-audio" in audio and "192K" in audio and "-t" not in audio
