@@ -24,9 +24,13 @@ Key capabilities:
 ## 🐳 Run using Docker
 
 ```bash
-docker run -d --name yoink -p 127.0.0.1:8080:8080 \
-  -v yoink-data:/data -v yoink-downloads:/downloads ghcr.io/daireb/yoink
+docker run -d -p 127.0.0.1:8080:8080 ghcr.io/daireb/yoink
 ```
+
+That's the whole thing — downloads live inside the container and you fetch
+them through the UI. It's the try-it command: replacing the container (which
+is how updates work) starts fresh. For an install that keeps its state, use
+compose:
 
 ## 🐳 Run using Docker Compose
 
