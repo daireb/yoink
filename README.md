@@ -91,9 +91,10 @@ For Cloudflare, the connector is already in the compose file behind a
 profile — no second setup:
 
 1. Zero Trust → Networks → Tunnels → create a tunnel, copy its token into
-   `.env` as `TUNNEL_TOKEN`, and add a public hostname pointing at
-   `http://localhost:8080`.
-2. Start with `docker compose --profile tunnel up -d`.
+   `.env` as `TUNNEL_TOKEN` (plus `COMPOSE_PROFILES=tunnel`, so every later
+   `docker compose up -d` and `update.sh` includes the tunnel), and add a
+   public hostname pointing at `http://localhost:8080`.
+2. Start with `docker compose up -d`.
 3. **Add the Access policy before you share the URL** (Zero Trust → Access →
    Applications → your hostname → allow your email). A tunnel alone publishes
    the app to the world with no login; the policy is the lock.
