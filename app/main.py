@@ -120,7 +120,8 @@ COLUMNS = {
     "parent_id": "TEXT",  # set on retry jobs; hidden from the list
     "cover": "TEXT",      # remote artwork URL (fallback when nothing is embedded)
     "current": "TEXT",    # track being downloaded right now
-    "lane": "TEXT NOT NULL DEFAULT 'bulk'",  # quick (one song) or bulk (many) — each lane runs one job at a time
+    "lane": "TEXT NOT NULL DEFAULT 'bulk'",
+    "duration": "REAL",     # seconds; set for single-video jobs (the artwork chip)  # quick (one song) or bulk (many) — each lane runs one job at a time
 }
 
 
@@ -339,6 +340,17 @@ def list_audio_files(job_dir: Path) -> list[Path]:
     return sorted(p for p in job_dir.iterdir() if p.is_file() and p.suffix.lower() in MEDIA_EXTS)
 
 
+def media_duration(path: Path) -> Optional[float]:
+    """Seconds of audio/video, from the container metadata. None on anything odd."""
+    try:
+        import mutagen
+        f = mutagen.File(path)
+        dur = getattr(getattr(f, "info", None), "length", None)
+        return float(dur) if dur and dur > 0 else None
+    except Exception:  # noqa: BLE001 - decoration, never fail a job over it
+        return None
+
+
 def finalize_job_dir(job_id: str, expected: list[dict], numbered: bool, job_dir: Path) -> list[dict]:
     """Match, number, write m3u. Returns the missing list."""
     files = list_audio_files(job_dir)
@@ -360,6 +372,9 @@ def finalize_job_dir(job_id: str, expected: list[dict], numbered: bool, job_dir:
     if len(expected) > 1 and ordered:
         m3u = job_dir / "playlist.m3u8"
         m3u.write_text("#EXTM3U\n" + "".join(f"{p.name}\n" for p in ordered), encoding="utf-8")
+    final = ordered or files
+    if len(final) == 1 and final[0].suffix.lower() in VIDEO_EXTS:
+        update_job(job_id, duration=media_duration(final[0]))
     return missing
 
 
@@ -468,7 +483,8 @@ def parse_progress(kind: str, line: str, state: dict) -> None:
         if YTDLP_FINISHED_RE.search(line):
             state["finished"] = state.get("finished", 0) + 1
         if m := YTDLP_DEST_RE.search(line):
-            state["current"] = Path(m.group(1)).stem
+            # strip yt-dlp's stream-id suffix (Title.f137) before showing it
+            state["current"] = re.sub(r"\.f\d+$", "", Path(m.group(1)).stem)
         state["done"] = max(state.get("extracted", 0), state.get("finished", 0))
     else:
         if m := SPOTDL_COMPLETE_RE.match(line):
@@ -1046,7 +1062,7 @@ async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
 
 def public_job(r: sqlite3.Row, with_files: bool = False) -> dict:
     d = {k: r[k] for k in ("id", "created", "finished", "kind", "title", "format", "bitrate",
-                           "numbered", "status", "step", "total", "done", "error", "current", "lane")}
+                           "numbered", "status", "step", "total", "done", "error", "current", "lane", "duration")}
     # the original link/query, so the UI can offer "Try again" (not for CSV jobs: that's a URL list)
     d["input"] = r["input"] if r["kind"] in ("spotify", "media", "search") else None
     job_dir = Path(r["dir"])

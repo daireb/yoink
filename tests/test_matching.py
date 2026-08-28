@@ -79,3 +79,10 @@ def test_wide_numbering_for_100_plus(main, tmp_path):
     main.finalize_job_dir("j1", expected, numbered=True, job_dir=tmp_path)
     assert (tmp_path / "001 - Artist - T001.mp3").exists()
     assert (tmp_path / "100 - Artist - T100.mp3").exists()
+
+
+def test_media_duration_graceful_on_garbage(main, tmp_path):
+    p = tmp_path / "x.mp4"
+    p.write_bytes(b"not a real mp4")
+    assert main.media_duration(p) is None
+    assert main.media_duration(tmp_path / "missing.mp4") is None

@@ -88,10 +88,9 @@
   .field .go:hover { filter: brightness(1.1); }
   .field .go:disabled { opacity: .6; cursor: default; filter: none; }
   /* pasting a video-capable link splits Request into Audio / Video */
-  .field .go.vid { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 500; width: auto; padding: 0 13px; }
+  .field .go.vid { background: transparent; color: var(--dim); border: 1px solid var(--line); }
   .field .go.vid:hover { color: var(--text); border-color: var(--dim); filter: none; }
-  .field.media .go { width: auto; padding: 0 13px; }
-  .field.media input { padding-right: 152px; }
+  .field.media input { padding-right: 104px; }
   @media (prefers-reduced-motion: reduce) { .field .go { transition: none; } }
   .err { color: var(--err); font-size: 13.5px; margin: 8px 16px 0; }
   .err.soft { color: var(--dim); }
@@ -113,13 +112,16 @@
   .jobs { margin-top: 24px; position: relative; }   /* anchors a leaving card in place */
   .job { padding: 0; margin-bottom: 12px; display: flex; align-items: stretch; overflow: hidden; transition: border-color .15s; position: relative; }
   .job:hover { border-color: #363c52; }
-  .coverwrap { width: 112px; flex-shrink: 0; align-self: stretch; position: relative; background: var(--panel2); border-right: 1px solid var(--line); display: grid; place-items: center; color: var(--dim); }
+  .coverwrap { width: 128px; flex-shrink: 0; align-self: stretch; position: relative; background: var(--panel2); border-right: 1px solid var(--line); display: grid; place-items: center; color: var(--dim); }
   .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: filter .55s ease; }
   .job.working .cover { filter: saturate(.4) brightness(.68); }
   .coverwrap > svg.i { width: 26px; height: 26px; }
   .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
           background: rgba(15,17,23,.7); color: #fff; border: 1px solid rgba(255,255,255,.25); transition: opacity .15s, transform .15s; backdrop-filter: blur(3px); }
   .play svg.i { width: 18px; height: 18px; }
+  /* video length, YouTube-style, bottom corner of the artwork */
+  .dur { position: absolute; right: 5px; bottom: 5px; background: rgba(0,0,0,.72); color: #fff;
+    font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radius: 5px; pointer-events: none; }
   /* pointer devices: art stays clean until you hover (the Spotify/Apple convention) */
   @media (hover: hover) {
     .play { opacity: 0; }
@@ -169,7 +171,7 @@
   .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; min-height: 39px; }
   .actions .spacer { flex: 1; }
   .actions .ibtn:last-child { margin-right: -7px; }
-  @media (max-width: 480px) { .coverwrap { width: 84px; } .body { padding: 14px; } }
+  @media (max-width: 480px) { .coverwrap { width: 124px; } .body { padding: 14px; } }
   .missing { margin-top: 10px; font-size: 13.5px; }
   .missing ul { margin: 6px 0 0 18px; color: var(--dim); }
 
@@ -240,6 +242,8 @@
 
 <svg width="0" height="0" style="position:absolute">
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-req-audio" viewBox="0 0 24 24"><circle cx="6.5" cy="17" r="2.5" fill="currentColor" stroke="none"/><path d="M9 17V5l8-1.8V9"/><path d="M18.5 13v6M16 16.5l2.5 2.5 2.5-2.5"/></symbol>
+  <symbol id="i-req-video" viewBox="0 0 24 24"><rect x="2.5" y="6" width="11.5" height="10" rx="2"/><path d="M7 9.4v3.2l2.8-1.6z" fill="currentColor" stroke="none"/><path d="M18.5 10v6M16 13.5l2.5 2.5 2.5-2.5"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
@@ -335,7 +339,7 @@
     <input type="text" id="input" placeholder="Paste a Spotify or YouTube link, or search…"
            autocomplete="off" autocapitalize="off" onkeydown="if(event.key==='Enter')submit()" oninput="syncGo()">
     <div class="goRow">
-      <button class="go vid" id="goVid" onclick="submit('mp4')" hidden>Video</button>
+      <button class="go vid" id="goVid" onclick="submit('mp4')" title="Request video" aria-label="Request video" hidden><svg class="i"><use href="#i-req-video"/></svg></button>
       <button class="go" id="goBtn" onclick="submit()" aria-label="Request"><svg class="i"><use href="#i-arrow"/></svg></button>
     </div>
   </div>
@@ -410,13 +414,16 @@ function fail(msg) { $('subErr').classList.remove('soft'); $('subErr').textConte
 const needsConfirm = (t) => /open\.spotify\.com\/(playlist|album|artist)\//.test(t) || /[?&]list=|\/playlist\?/.test(t);
 
 // A non-Spotify URL can be kept as actual video; only then does the split show.
+const fmtDur = (s) => { s = Math.round(s); const h = s / 3600 | 0, m = (s % 3600) / 60 | 0, x = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
 const isVideo = (n) => /\.(mp4|webm|mkv)$/i.test(n || '');
 const canVideo = (t) => /^https?:\/\//i.test(t) && !/open\.spotify\.com/.test(t) && !/^spotify:/.test(t);
 function syncGo() {
   const media = canVideo($('input').value.trim());
   $('goVid').hidden = !media;
-  $('goBtn').innerHTML = media ? 'Audio' : '<svg class="i"><use href="#i-arrow"/></svg>';
+  $('goBtn').innerHTML = `<svg class="i"><use href="#${media ? 'i-req-audio' : 'i-arrow'}"/></svg>`;
   $('goBtn').setAttribute('aria-label', media ? 'Request audio' : 'Request');
+  $('goBtn').title = media ? 'Request audio' : '';
   document.querySelector('.field').classList.toggle('media', media);
 }
 
@@ -589,16 +596,18 @@ async function tryAgain(id) {
 
 function stateLine(j) {
   const multi = (j.total || 0) > 1;
+  const vid = j.format === 'mp4';
+  const noun = vid ? 'video' : 'song';
   switch (j.status) {
     case 'queued': return ['', 'Waiting…', false];
     case 'running':
-      if (j.step === 'resolving') return ['', 'Looking up tracks…', true];
+      if (j.step === 'resolving') return ['', vid ? 'Checking the video…' : 'Looking up tracks…', true];
       if (j.step === 'finishing') return ['', 'Finishing up…', true];
       if (j.current) return ['', j.total ? `${j.done} of ${j.total} · ${j.current}` : j.current, false];
-      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : 'Downloading…', false];
+      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : `Downloading ${vid ? 'video' : ''}…`.replace(' …', '…'), false];
     case 'retrying': return ['', 'Retrying the missing ones…', true];
-    case 'done': return ['ok', `Ready${multi ? ' · ' + plural(j.files_count, 'song') : ''} · ${mb(j.size_bytes)}`, false];
-    case 'done_with_errors': return ['warn', `Ready · ${plural(j.files_count, 'song')} · ${plural(j.missing.length, 'song')} couldn't be found`, false];
+    case 'done': return ['ok', `Ready · ${multi ? plural(j.files_count, noun) : (vid ? 'video' : '')} · ${mb(j.size_bytes)}`.replace(' ·  ·', ' ·'), false];
+    case 'done_with_errors': return ['warn', `Ready · ${plural(j.files_count, noun)} · ${plural(j.missing.length, noun)} couldn't be found`, false];
     case 'cancelled': return ['', 'Cancelled', false];
     case 'interrupted': return ['bad', 'Interrupted — the server restarted', false];
     default: return ['bad', `Couldn't download — ${j.error || 'unknown error'}`, false];
@@ -612,7 +621,8 @@ function createCard(id) {
   el.className = 'card job'; el.dataset.id = id;
   el.innerHTML = `
     <div class="coverwrap"><svg class="i src-glyph"><use href=""/></svg><img class="cover" alt="" loading="lazy" referrerpolicy="no-referrer" hidden>
-      <button class="play" data-act="play" data-job="${id}" aria-label="Preview" hidden>${icon('i-play')}</button></div>
+      <button class="play" data-act="play" data-job="${id}" aria-label="Preview" hidden>${icon('i-play')}</button>
+      <span class="dur" hidden></span></div>
     <div class="body">
       <div class="job-head"><div class="job-title"></div><a class="src" target="_blank" rel="noopener"><svg class="i"><use href=""/></svg></a></div>
       <div class="state"><span class="spin" hidden></span><span class="txt"></span></div>
@@ -662,6 +672,9 @@ function updateCard(el, j) {
   else show(img, false);
   const play = q('.play');
   show(play, ready && !!j.first_file);
+  const dur = q('.dur'), showDur = j.duration && isVideo(j.first_file || '');
+  show(dur, !!showDur);
+  if (showDur) { const t = fmtDur(j.duration); if (dur.textContent !== t) dur.textContent = t; }
   play.dataset.file = j.first_file || '';
   q('.coverwrap .src-glyph').style.visibility = (img.hidden || !j.cover) ? '' : 'hidden';
 

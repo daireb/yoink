@@ -43,3 +43,8 @@ def test_ytdlp_sequence(main):
 def test_ytdlp_already_downloaded_counts(main):
     state = feed(main, "media", ["[download] Big Buck Bunny.webm has already been downloaded"])
     assert state["done"] == 1
+
+
+def test_ytdlp_stream_suffix_stripped_from_current(main):
+    state = feed(main, "media", ["[download] Destination: /d/x/Sintel - Open Movie.f137.mp4"])
+    assert state["current"] == "Sintel - Open Movie"
