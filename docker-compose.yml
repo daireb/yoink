@@ -1,11 +1,15 @@
 # Yoink — self-hosted Spotify/YouTube download portal.
 #
-#   docker compose up -d        ->  http://localhost:8080
-#   ./update.sh                 ->  pull the newest image and restart
+#   docker compose up -d                     ->  http://localhost:8080
+#   docker compose --profile tunnel up -d    ->  same, plus Cloudflare Tunnel
+#   ./update.sh                              ->  pull the newest image, restart
 #
-# The image is built and published by CI (ghcr.io/daireb/yoink) whenever
-# yt-dlp releases. To run from source instead: docker build -t yoink:local .
-# and set YOINK_IMAGE=yoink:local in .env.
+# Works with no .env at all: downloads live in a Docker volume and you fetch
+# them through the UI. To land them in a host folder instead, set
+# YOINK_DOWNLOADS in .env (the folder must be writable by uid 10001).
+# The image is rebuilt and published whenever yt-dlp releases; run ./update.sh
+# on a schedule and you never think about it. From source: docker build -t
+# yoink:local . and set YOINK_IMAGE=yoink:local.
 #
 # Sandboxing mirrors the usual untrusted-tool posture: non-root, no
 # capabilities, read-only rootfs, loopback-only port. Keep the port
@@ -38,7 +42,9 @@ services:
 
     volumes:
       # Where finished audio lands (also downloadable through the UI).
-      - ${YOINK_DOWNLOADS:-./downloads}:/downloads
+      # Default: a Docker volume, so this works with zero setup. Point
+      # YOINK_DOWNLOADS at a host folder to keep files on your machine.
+      - ${YOINK_DOWNLOADS:-yoink-downloads}:/downloads
       # Job database, logs, tool caches.
       - yoink-data:/data
 
@@ -52,5 +58,23 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Optional: Cloudflare Tunnel in the same file, so remote access needs no
+  # second setup. Get a token in Zero Trust -> Networks -> Tunnels, put it in
+  # .env as TUNNEL_TOKEN, then start with:  docker compose --profile tunnel up -d
+  # (host networking lets it reach the loopback-only port above)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: yoink-cloudflared
+    restart: unless-stopped
+    profiles: [tunnel]
+    network_mode: host
+    command: tunnel run --token ${TUNNEL_TOKEN:-}
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 volumes:
   yoink-data:
+  yoink-downloads:

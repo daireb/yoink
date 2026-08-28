@@ -8,13 +8,7 @@ It is deliberately a **utility, not a music library**: no accounts to link, no
 collection to curate, no sync. Files land in a folder you choose, stay there
 for a week, and clean themselves up.
 
-```
-┌──────────────┐     ┌─────────┐     ┌──────────────────────┐
-│ paste a link │ ──▶ │  Yoink  │ ──▶ │ 01 - Artist - Title  │
-└──────────────┘     └─────────┘     │ 02 - Artist - Title  │
-                                     │ playlist.m3u8        │
-                                     └──────────────────────┘
-```
+![Yoink](docs/screenshot.png)
 
 ## What it does
 
@@ -32,26 +26,30 @@ for a week, and clean themselves up.
 
 ## Quick start
 
-You need Docker with Compose v2 on x86-64 or ARM64 — a NAS, a Raspberry Pi,
-a spare laptop. Nothing is built on your machine: CI publishes a ready image.
+You need Docker on x86-64 or ARM64 — a NAS, a Raspberry Pi, a spare laptop.
+Nothing is built on your machine and nothing needs configuring: downloads
+live in a Docker volume and you fetch them through the UI.
+
+```bash
+docker run -d --name yoink -p 127.0.0.1:8080:8080 \
+  -v yoink-data:/data -v yoink-downloads:/downloads ghcr.io/daireb/yoink
+```
+
+Or, better — the compose file adds the sandbox hardening and an optional
+Cloudflare Tunnel, and is what the update script expects:
 
 ```bash
 mkdir yoink && cd yoink
-# grab docker-compose.yml and .env.example from this repo into that folder
-cp .env.example .env          # set YOINK_DOWNLOADS to where audio should land
+curl -fsSLO https://raw.githubusercontent.com/daireb/yoink/main/docker-compose.yml
 docker compose up -d
 ```
 
 Open **http://localhost:8080**.
 
-> **While the image is private** you need to log in once before the pull:
-> `docker login ghcr.io -u <github-user>` with a *classic* personal access
-> token that has the `read:packages` scope (fine-grained tokens can't read
-> packages). Set it to never expire so a scheduled update doesn't silently
-> stop a year from now. Once the image is public this step goes away.
-
-By default the port is published on `127.0.0.1` only, so nothing outside the
-machine can reach it — see *Putting it on the internet* before changing that.
+The port is published on `127.0.0.1` only, so nothing outside the machine
+can reach it — see *Putting it on the internet* for LAN or remote access.
+To land files in a real folder instead of a volume, set `YOINK_DOWNLOADS`
+(see Configuration).
 
 ## Configuration
 
@@ -60,10 +58,11 @@ Copy `.env.example` to `.env`; it documents every setting inline.
 | Variable | Default | Purpose |
 |---|---|---|
 | `YOINK_IMAGE` | `ghcr.io/daireb/yoink:latest` | image to run; pin a date tag, or `yoink:local` for your own build |
-| `YOINK_DOWNLOADS` | `./downloads` | host folder where audio lands (must be writable by uid 10001) |
+| `YOINK_DOWNLOADS` | *(Docker volume)* | set a host folder to keep files on your machine (must be writable by uid 10001) |
 | `YOINK_KEEP_DAYS` | `7` | days a finished download is kept |
 | `YOINK_PASSWORD` | *(unset — no login)* | password for the web UI |
 | `YOINK_SECRET` | auto-generated | cookie-signing secret override |
+| `TUNNEL_TOKEN` | *(unset)* | Cloudflare Tunnel token for the optional `tunnel` profile |
 | `YOINK_THREADS` | `4` | parallel downloads within one job |
 | `YOINK_PREFLIGHT_TIMEOUT` | `80` | seconds a link lookup may take before giving up |
 | `YOINK_UPDATE_CHECK` | `1` | check PyPI for yt-dlp releases and warn when this install has fallen behind |
@@ -88,13 +87,19 @@ like [Cloudflare Tunnel + Access](https://developers.cloudflare.com/cloudflare-o
 or [Tailscale](https://tailscale.com/) authenticates people *before* any
 request reaches Yoink, and needs no ports opened on your router:
 
-1. Leave the port bound to `127.0.0.1` and leave `YOINK_PASSWORD` unset.
-2. Run the tunnel daemon on the same host and point your hostname at
-   `http://localhost:8080`. (If the daemon is itself a container, it can't see
-   the host's loopback — give it `network_mode: host`, or put both on one
-   Docker network and target `http://yoink:8080`.)
-3. **Add the access policy before you share the URL.** A tunnel alone
-   publishes the app to the world with no login; the policy is the lock.
+For Cloudflare, the connector is already in the compose file behind a
+profile — no second setup:
+
+1. Zero Trust → Networks → Tunnels → create a tunnel, copy its token into
+   `.env` as `TUNNEL_TOKEN`, and add a public hostname pointing at
+   `http://localhost:8080`.
+2. Start with `docker compose --profile tunnel up -d`.
+3. **Add the Access policy before you share the URL** (Zero Trust → Access →
+   Applications → your hostname → allow your email). A tunnel alone publishes
+   the app to the world with no login; the policy is the lock.
+
+For Tailscale, `tailscale serve 8080` on the host does the whole job. Leave
+the port loopback-bound and `YOINK_PASSWORD` unset in both cases.
 
 Yoink trusts `X-Forwarded-Proto` from whatever fronts it, so its cookies get
 the `Secure` flag automatically over HTTPS.
