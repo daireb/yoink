@@ -823,12 +823,6 @@ async def login(request: Request, response: Response):
     return {"ok": True}
 
 
-@app.post("/api/logout")
-def logout(response: Response):
-    response.delete_cookie(COOKIE)
-    return {"ok": True}
-
-
 def assert_public_url(url: str) -> None:
     """yt-dlp will fetch anything; don't let a link point it at the LAN."""
     import ipaddress

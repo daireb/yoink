@@ -13,10 +13,9 @@
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <style>
   @font-face { font-family: "IBM Plex Mono"; src: url("/static/fonts/IBMPlexMono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-  @font-face { font-family: "IBM Plex Mono"; src: url("/static/fonts/IBMPlexMono-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
   :root {
     --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    --bg: #0f1117; --panel: #171a23; --panel2: #1e2230; --line: #2a2f40;
+    --bg: #0f1117; --panel2: #1e2230; --line: #2a2f40;
     --text: #e6e9f2; --dim: #8b91a7; --accent: #7c8cff; --accent2: #5865f2;
     --ok: #4ade80; --warn: #fbbf24; --err: #f87171; --radius: 14px;
   }
@@ -100,7 +99,6 @@
   button:hover { filter: brightness(1.1); }
   button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 500; padding: 7px 13px; font-size: 13px; }
   button.ghost:hover { color: var(--text); border-color: var(--dim); filter: none; }
-  a.btn { text-decoration: none; display: inline-block; }
   .linkish { background: none; border: 0; color: var(--accent); padding: 0; font-size: inherit; font-weight: 500; cursor: pointer; }
   .linkish:hover { text-decoration: underline; filter: none; }
 
@@ -200,7 +198,7 @@
   .steps { margin: 0 0 0 20px; color: var(--text); font-size: 14px; display: grid; gap: 6px; }
   .steps a { color: var(--accent); text-decoration: none; } .steps a:hover { text-decoration: underline; }
   .dropzone { border: 1.5px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; color: var(--dim); font-size: 14px; cursor: pointer; display: grid; gap: 8px; justify-items: center; transition: border-color .15s, background .15s; }
-  .dropzone:hover, .dropzone.hover { border-color: var(--accent); background: rgba(124,140,255,.06); }
+  .dropzone:hover { border-color: var(--accent); background: rgba(124,140,255,.06); }
   .dropzone span { color: var(--accent); }
   .dropzone svg.i { width: 22px; height: 22px; }
   .optgrid { gap: 14px; }

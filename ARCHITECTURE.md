@@ -215,11 +215,10 @@ keeps it under a week, so the banner means "your updates have stopped", not
 "a release exists". Source builds get the rebuild command instead of the
 pull command.
 
-**Access while private.** GHCR only accepts classic personal access tokens
-(`read:packages`); fine-grained tokens cannot read packages at all. A
-friend needs either collaborator access on the repo or a Read role on the
-package, plus their own token. Making the package public is one-way, and
-public GHCR images pull anonymously.
+**Access.** Repo and image are public (MIT); `docker pull` needs no
+authentication. For anyone running a *private* fork: GHCR only accepts
+classic personal access tokens (`read:packages`) — fine-grained tokens
+cannot read packages at all — and making a package public is one-way.
 
 ## Known limitations
 
