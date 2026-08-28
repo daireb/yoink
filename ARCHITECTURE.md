@@ -160,12 +160,14 @@ a one-line permission change rather than a build tutorial.
 day. The daily run asks PyPI for the newest yt-dlp and looks for a matching
 `ytdlp-<version>` tag on GHCR; if it exists, nothing happens. Otherwise:
 
-1. build for amd64 and load it into the runner,
-2. smoke-test it — start it read-only, hit `/api/health`, confirm ffmpeg,
+1. run the pytest suite (matching, ordering, lanes, truncation guard,
+   progress parsing, auth, SSRF — pure logic plus TestClient, no network),
+2. build for amd64 and load it into the runner,
+3. smoke-test it — start it read-only, hit `/api/health`, confirm ffmpeg,
    spotDL, Deno and the spotapi patch all load, fail on any traceback,
-3. only then build for amd64 + arm64 and push, tagged `latest`,
+4. only then build for amd64 + arm64 and push, tagged `latest`,
    `YYYY.MM.DD` and `ytdlp-<version>`,
-4. prune old versions (GHCR storage is free today; this is hygiene). The
+5. prune old versions (GHCR storage is free today; this is hygiene). The
    step is non-fatal, and it works with the built-in token for the package
    this workflow created. A fork whose package was created some other way
    may need to grant its repository the Admin role (package settings →
@@ -234,6 +236,13 @@ cannot read packages at all — and making a package public is one-way.
 
 ```bash
 docker build -t yoink:local . && YOINK_IMAGE=yoink:local docker compose up -d
+```
+
+Tests (no network, no Docker; the conftest points the app at a temp dir):
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -q
 ```
 
 or outside Docker:

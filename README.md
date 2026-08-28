@@ -165,6 +165,7 @@ capabilities). Design, engine quirks and the security model are in
 
 ```
 app/main.py                  backend + workers (single file)
+tests/                       pytest suite (pure logic + API; no network)
 app/static/index.html        UI (single file, no build step)
 app/spotdl_patch.py          metadata-lookup cache for spotDL
 .github/workflows/image.yml  builds, tests and publishes the image
