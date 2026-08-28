@@ -131,11 +131,9 @@ run on any schedule (weekly is plenty):
 docker compose pull && docker compose up -d
 ```
 
-The repo's [update.sh](update.sh) does the same plus housekeeping, and skips
-the restart while a download is running. A plain `restart` updates nothing —
-yt-dlp is baked into the image. If an install falls more than two weeks
-behind, the UI shows a banner saying so, with the command to run: during
-normal operation you never see it.
+A plain `restart` updates nothing — yt-dlp is baked into the image. If an
+install falls more than two weeks behind, the UI shows a banner saying so,
+with the command to run: during normal operation you never see it.
 
 Running from source instead: `docker build -t yoink:local .` and set
 `YOINK_IMAGE=yoink:local` in `.env`.
@@ -170,7 +168,6 @@ app/main.py                  backend + workers (single file)
 app/static/index.html        UI (single file, no build step)
 app/spotdl_patch.py          metadata-lookup cache for spotDL
 .github/workflows/image.yml  builds, tests and publishes the image
-update.sh                    pull the newest image (run on the host)
 ```
 
 ## 🙏 Credits

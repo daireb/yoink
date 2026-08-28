@@ -190,11 +190,13 @@ reason is worse than the saving. Bytecode caches are kept because without
 them spotDL takes twice as long to start, and that is the latency a user
 sees on every lookup. Result: 227 MB compressed, down from 298 MB.
 
-**Pull.** `update.sh` is `docker compose pull && docker compose up -d` with
-an image prune and a one-line report. It is meant to run from cron or a NAS
-task scheduler. Watchtower was the traditional answer; its upstream was
-archived in December 2025 and it needs the Docker socket, so a scheduled
-pull is both the current consensus and the lower-privilege choice.
+**Pull.** Hosts stay current with a scheduled
+`docker compose pull && docker compose up -d` (cron, NAS task scheduler).
+Watchtower was the traditional answer; its upstream was archived in
+December 2025 and it needs the Docker socket, so a scheduled pull is both
+the current consensus and the lower-privilege choice. An update.sh wrapper
+(busy-guard, one-line report) existed briefly and was removed as a second
+way to do the same thing.
 
 **Why no self-update inside the container.** The filesystem is read-only on
 purpose, and an app that downloads and executes fresh code into itself is a
