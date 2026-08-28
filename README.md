@@ -61,8 +61,8 @@ nothing needs configuring: downloads live in a Docker volume and you fetch
 them through the UI.
 
 For a permanent install, prefer the repo's
-[docker-compose.yml](docker-compose.yml) — same thing plus log rotation, an
-optional Cloudflare Tunnel service, and every setting wired to `.env`:
+[docker-compose.yml](docker-compose.yml) — same thing plus log rotation and
+every setting wired to `.env`:
 
 ```bash
 mkdir yoink && cd yoink
@@ -81,7 +81,7 @@ Everything is optional. Set values in `.env` next to the compose file
 | `YOINK_KEEP_DAYS` | `7` | days a finished download is kept |
 | `YOINK_PASSWORD` | *(unset — no login)* | password for the web UI |
 | `YOINK_THREADS` | `4` | parallel downloads within one job; use `2` on a small NAS CPU |
-| `TUNNEL_TOKEN` | *(unset)* | Cloudflare Tunnel token for the optional `tunnel` profile |
+| `TUNNEL_TOKEN` | *(unset)* | Cloudflare Tunnel token, if you use the override snippet under *Remote access* |
 | `YOINK_UPDATE_CHECK` | `1` | warn in the UI when this install falls behind on yt-dlp |
 | `YOINK_PREFLIGHT_TIMEOUT` | `80` | seconds a link lookup may take (keep under your proxy's origin timeout) |
 | `YOINK_SECRET` | auto-generated | cookie-signing secret override |
@@ -97,21 +97,25 @@ port binds to `127.0.0.1`, so out of the box nothing else can reach it.
 * **Your LAN** — change the port mapping to `"8080:8080"` and set
   `YOINK_PASSWORD` to a long passphrase.
 * **From anywhere** — put an identity proxy in front and leave the password
-  unset. The Cloudflare connector is already in the compose file: create a
-  tunnel in [Zero Trust](https://one.dash.cloudflare.com) → Networks →
-  Tunnels, point a public hostname at `http://localhost:8080`, and set in
-  `.env`:
+  unset. The simplest is [Tailscale](https://tailscale.com/): `tailscale
+  serve 8080` on the host, done. For [Cloudflare
+  Tunnel + Access](https://one.dash.cloudflare.com) on your own domain, drop
+  this next to the compose file as `docker-compose.override.yml` (compose
+  merges it automatically) with your tunnel token in `.env`:
 
-  ```
-  TUNNEL_TOKEN=<your token>
-  COMPOSE_PROFILES=tunnel
+  ```yaml
+  services:
+    cloudflared:
+      image: cloudflare/cloudflared:latest
+      restart: unless-stopped
+      network_mode: host
+      command: tunnel run --token ${TUNNEL_TOKEN}
   ```
 
-  then `docker compose up -d`. **Add the Access policy before sharing the
-  URL** (Zero Trust → Access → Applications → your hostname → allow your
-  email) — a tunnel without a policy is open to the world. Prefer
-  [Tailscale](https://tailscale.com/)? `tailscale serve 8080` on the host
-  does the whole job.
+  Point the tunnel's public hostname at `http://localhost:8080`, and **add
+  the Access policy before sharing the URL** (Zero Trust → Access →
+  Applications → your hostname → allow your email) — a tunnel without a
+  policy is open to the world.
 
 Yoink trusts `X-Forwarded-Proto` from whatever fronts it, so cookies get the
 `Secure` flag automatically over HTTPS.
