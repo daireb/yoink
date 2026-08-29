@@ -294,6 +294,12 @@
         <option value="192">Compact · 192 kbps</option>
         <option value="128">Smallest · 128 kbps</option>
       </select></div>
+    <div class="opt"><label>Video quality</label>
+      <select id="vres">
+        <option value="best">Best available</option>
+        <option value="1080">Up to 1080p</option>
+        <option value="720">Up to 720p</option>
+      </select></div>
     <div class="opt"><label>Format</label>
       <select id="format">
         <option value="mp3">MP3</option><option value="m4a">M4A</option><option value="opus">Opus</option><option value="flac">FLAC</option>
@@ -376,22 +382,23 @@ let detailsId = null;      // job shown in the details modal
 const JOBS = {};           // latest job rows by id
 
 // ---- options (defaults, persisted) -------------------------------------------
-const DEFAULTS = { format: 'mp3', bitrate: 320, numbered: true };
+const DEFAULTS = { format: 'mp3', bitrate: 320, numbered: true, vres: 'best' };
 function loadOpts() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('yoink.opts') || '{}') }; } catch { return { ...DEFAULTS }; } }
 function opts() { return loadOpts(); }
 function openOptions() {
   const o = loadOpts();
   $('bitrate').value = o.bitrate; $('format').value = o.format; $('numbered').checked = o.numbered;
+  $('vres').value = o.vres || 'best';
   $('options').classList.add('show');
 }
 function closeOptions() {
-  const o = { format: $('format').value, bitrate: +$('bitrate').value, numbered: $('numbered').checked };
+  const o = { format: $('format').value, bitrate: +$('bitrate').value, numbered: $('numbered').checked, vres: $('vres').value };
   localStorage.setItem('yoink.opts', JSON.stringify(o));
   $('options').classList.remove('show');
   // the Format list is audio-only, so it must never overwrite a pending video request
   if (pending) { const keep = pending.format === 'mp4'; Object.assign(pending, o); if (keep) pending.format = 'mp4'; renderConfirmOpts(); }
 }
-const optsSummary = (o) => [o.format.toUpperCase(), o.format === 'mp4' ? null : `${o.bitrate} kbps`,
+const optsSummary = (o) => [o.format.toUpperCase(), o.format === 'mp4' ? (o.vres && o.vres !== 'best' ? `up to ${o.vres}p` : null) : `${o.bitrate} kbps`,
                             o.numbered ? 'numbered in playlist order' : 'not numbered'].filter(Boolean).join(' · ');
 
 // ---- api --------------------------------------------------------------------
@@ -881,7 +888,7 @@ function metaHtml(d) {
   const when = ({ cancelled: 'Cancelled at', error: 'Failed at', interrupted: 'Interrupted at' })[d.status] || 'Completed at';
   return `<dt>Requested</dt><dd>${requested}</dd>
     <dt>Source</dt><dd>${esc(srcLabel)}</dd>
-    <dt>Format</dt><dd>${esc(d.format.toUpperCase())}${d.format === 'mp4' ? '' : ` · ${d.bitrate} kbps`}${d.numbered ? ' · numbered' : ''}</dd>
+    <dt>Format</dt><dd>${esc(d.format.toUpperCase())}${d.format === 'mp4' ? (d.vres ? ` · up to ${esc(d.vres)}p` : '') : ` · ${d.bitrate} kbps`}${d.numbered ? ' · numbered' : ''}</dd>
     <dt>Requested at</dt><dd>${new Date(d.created * 1000).toLocaleString()}</dd>
     ${d.finished ? `<dt>${when}</dt><dd>${new Date(d.finished * 1000).toLocaleString()}</dd>` : ''}
     ${d.keep_until ? `<dt>Kept until</dt><dd>${new Date(d.keep_until * 1000).toLocaleString()}</dd>` : ''}`;

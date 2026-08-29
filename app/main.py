@@ -122,7 +122,8 @@ COLUMNS = {
     "current": "TEXT",    # track being downloaded right now
     "lane": "TEXT NOT NULL DEFAULT 'bulk'",
     "duration": "REAL",     # seconds; set for single-file jobs (the artwork chip)
-    "progress": "REAL",     # 0..1 within the downloading step (byte-level for yt-dlp)  # quick (one song) or bulk (many) — each lane runs one job at a time
+    "progress": "REAL",     # 0..1 within the downloading step (byte-level for yt-dlp)
+    "vres": "TEXT",         # video resolution cap ("1080"/"720"); null = best available  # quick (one song) or bulk (many) — each lane runs one job at a time
 }
 
 
@@ -451,12 +452,14 @@ def spotdl_download_cmd(spotdl_file: Path, fmt: str, bitrate: int, job_dir: Path
     return cmd
 
 
-def ytdlp_download_cmd(url: str, fmt: str, bitrate: int, job_dir: Path, is_playlist: bool) -> list[str]:
+def ytdlp_download_cmd(url: str, fmt: str, bitrate: int, job_dir: Path, is_playlist: bool,
+                       vres: Optional[str] = None) -> list[str]:
     tmpl = "%(title)s.%(ext)s"
     if fmt == "mp4":
         # Video mode: yt-dlp's mp4 preset (H.264/AAC in mp4, remuxed not
         # re-encoded where possible) — plays everywhere; bitrate is ignored.
         cmd = ["yt-dlp", "-t", "mp4",
+               *(["-S", f"res:{vres},vcodec:h264,acodec:aac"] if vres else []),
                "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
                "--newline", "--no-colors", "--no-overwrites",
                "--progress-template", YTDLP_PROG_TEMPLATE,
@@ -655,7 +658,8 @@ def run_job(row: sqlite3.Row) -> None:
             # ---- step 2: download -----------------------------------------
             update_job(job_id, step="downloading")
             if kind == "media":
-                cmd = ytdlp_download_cmd(row["input"], row["format"], row["bitrate"], job_dir, is_playlist)
+                cmd = ytdlp_download_cmd(row["input"], row["format"], row["bitrate"], job_dir, is_playlist,
+                                         vres=row["vres"])
             else:
                 cmd = spotdl_download_cmd(spotdl_file, row["format"], row["bitrate"], job_dir)
             code = run_step(handle, cmd, log, job_dir, kind, state, progress)
@@ -916,6 +920,16 @@ def parse_options(body: dict) -> tuple[str, int, Optional[bool]]:
     return fmt, bitrate, None if numbered is None else bool(numbered)
 
 
+def parse_vres(body: dict) -> Optional[str]:
+    """Video resolution cap: None (best) or a height. Ignored for audio formats."""
+    v = str(body.get("vres", "") or "best")
+    if v == "best":
+        return None
+    if v not in ("1080", "720"):
+        raise HTTPException(400, "bad video quality")
+    return v
+
+
 def clean_input(text: str) -> str:
     text = text.strip()
     if not text:
@@ -1023,6 +1037,8 @@ async def submit(request: Request):
     if numbered is None:
         numbered = (total or 0) > 1
     job_id = create_job(kind, text, str(title)[:120], fmt, bitrate, numbered, total, expected)
+    if fmt == "mp4" and (vres := parse_vres(body)):
+        update_job(job_id, vres=vres)
     if expected and expected[0].get("cover"):
         update_job(job_id, cover=expected[0]["cover"])
     if pre is not None:
@@ -1088,7 +1104,7 @@ async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
 
 def public_job(r: sqlite3.Row, with_files: bool = False) -> dict:
     d = {k: r[k] for k in ("id", "created", "finished", "kind", "title", "format", "bitrate",
-                           "numbered", "status", "step", "total", "done", "error", "current", "lane", "duration", "progress")}
+                           "numbered", "status", "step", "total", "done", "error", "current", "lane", "duration", "progress", "vres")}
     # the original link/query, so the UI can offer "Try again" (not for CSV jobs: that's a URL list)
     d["input"] = r["input"] if r["kind"] in ("spotify", "media", "search") else None
     job_dir = Path(r["dir"])

@@ -45,3 +45,12 @@ def test_ytdlp_commands_carry_the_progress_template(main):
         cmd = main.ytdlp_download_cmd("https://youtube.com/watch?v=x", fmt, 320, pathlib.Path("/tmp"), False)
         i = cmd.index("--progress-template")
         assert cmd[i + 1].startswith("download:yoink-prog")
+
+
+def test_video_resolution_cap(main):
+    import pathlib
+    capped = main.ytdlp_download_cmd("https://youtube.com/watch?v=x", "mp4", 320, pathlib.Path("/tmp"), False, vres="1080")
+    i = capped.index("-S")
+    assert capped[i + 1] == "res:1080,vcodec:h264,acodec:aac"
+    best = main.ytdlp_download_cmd("https://youtube.com/watch?v=x", "mp4", 320, pathlib.Path("/tmp"), False, vres=None)
+    assert "-S" not in best

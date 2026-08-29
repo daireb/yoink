@@ -72,3 +72,13 @@ def test_list_audio_files_includes_video(main, tmp_path):
     for n in ("a.mp3", "b.mp4", "c.webm", "notes.txt"):
         (tmp_path / n).write_bytes(b"")
     assert [p.name for p in main.list_audio_files(tmp_path)] == ["a.mp3", "b.mp4", "c.webm"]
+
+
+def test_parse_vres(main):
+    import pytest
+    from fastapi import HTTPException
+    assert main.parse_vres({}) is None
+    assert main.parse_vres({"vres": "best"}) is None
+    assert main.parse_vres({"vres": "1080"}) == "1080"
+    with pytest.raises(HTTPException):
+        main.parse_vres({"vres": "4000"})
