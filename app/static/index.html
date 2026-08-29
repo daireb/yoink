@@ -112,15 +112,22 @@
   .jobs { margin-top: 24px; position: relative; }   /* anchors a leaving card in place */
   .job { padding: 0; margin-bottom: 12px; display: flex; align-items: stretch; overflow: hidden; transition: border-color .15s; position: relative; }
   .job:hover { border-color: #363c52; }
-  .coverwrap { width: 128px; flex-shrink: 0; align-self: stretch; position: relative; background: var(--panel2); border-right: 1px solid var(--line); display: grid; place-items: center; color: var(--dim); }
-  .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: filter .55s ease; }
+  .coverwrap { width: 128px; flex-shrink: 0; align-self: stretch; position: relative; overflow: hidden; background: var(--panel2); border-right: 1px solid var(--line); display: grid; place-items: center; color: var(--dim); }
+  /* Artwork is never cropped: the image is contained, and the gap it leaves is
+     filled by a blurred copy of itself. Square album art fills the tile exactly,
+     so the backdrop only ever shows behind 16:9 video thumbnails. */
+  .backdrop { position: absolute; inset: 0; background-size: cover; background-position: center;
+              filter: blur(18px) saturate(1.3) brightness(.5); transform: scale(1.3); z-index: 0;
+              transition: filter .55s ease; }
+  .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 1; transition: filter .55s ease; }
   .job.working .cover { filter: saturate(.4) brightness(.68); }
+  .job.working .backdrop { filter: blur(18px) saturate(.4) brightness(.34); }
   .coverwrap > svg.i { width: 26px; height: 26px; }
-  .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
+  .play { position: absolute; inset: 0; margin: auto; width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center; z-index: 3;
           background: rgba(15,17,23,.7); color: #fff; border: 1px solid rgba(255,255,255,.25); transition: opacity .15s, transform .15s; backdrop-filter: blur(3px); }
   .play svg.i { width: 18px; height: 18px; }
   /* video length, YouTube-style, bottom corner of the artwork */
-  .dur { position: absolute; right: 5px; bottom: 5px; background: rgba(0,0,0,.72); color: #fff;
+  .dur { position: absolute; right: 5px; bottom: 5px; z-index: 3; background: rgba(0,0,0,.72); color: #fff;
     font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radius: 5px; pointer-events: none; }
   /* pointer devices: art stays clean until you hover (the Spotify/Apple convention) */
   @media (hover: hover) {
@@ -141,7 +148,8 @@
   .file .fplay { flex-shrink: 0; margin-top: 2px; }
   .body { flex: 1; min-width: 0; padding: 16px; }
   .job-head { display: flex; align-items: flex-start; gap: 10px; }
-  .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; line-height: 1.35; }
+  .job-title { font-weight: 600; overflow-wrap: anywhere; flex: 1; line-height: 1.35;
+               display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .src { color: var(--dim); flex-shrink: 0; padding: 7px; margin: -7px -7px -7px 0; border-radius: 9px; display: inline-flex; }
   a.src:hover { color: var(--accent); background: var(--panel2); }
   .state { margin-top: 6px; font-family: var(--mono); font-size: 12.5px; letter-spacing: -0.01em; color: var(--dim);
@@ -378,9 +386,11 @@ function closeOptions() {
   const o = { format: $('format').value, bitrate: +$('bitrate').value, numbered: $('numbered').checked };
   localStorage.setItem('yoink.opts', JSON.stringify(o));
   $('options').classList.remove('show');
-  if (pending) { Object.assign(pending, o); renderConfirmOpts(); }
+  // the Format list is audio-only, so it must never overwrite a pending video request
+  if (pending) { const keep = pending.format === 'mp4'; Object.assign(pending, o); if (keep) pending.format = 'mp4'; renderConfirmOpts(); }
 }
-const optsSummary = (o) => `${o.format.toUpperCase()} · ${o.bitrate} kbps · ${o.numbered ? 'numbered in playlist order' : 'not numbered'}`;
+const optsSummary = (o) => [o.format.toUpperCase(), o.format === 'mp4' ? null : `${o.bitrate} kbps`,
+                            o.numbered ? 'numbered in playlist order' : 'not numbered'].filter(Boolean).join(' · ');
 
 // ---- api --------------------------------------------------------------------
 async function api(path, o) {
@@ -467,7 +477,8 @@ async function uploadCsv(file) {
 
 function showConfirm(p) {
   $('cTitle').textContent = p.title;
-  $('cSub').textContent = p.est_mb == null ? `${plural(p.count, 'video')}` : `${plural(p.count, 'song')} · about ${p.est_mb} MB`;
+  const noun = (pending && pending.format) === 'mp4' ? 'video' : 'song';
+  $('cSub').textContent = plural(p.count, noun) + (p.est_mb == null ? '' : ` · about ${p.est_mb} MB`);
   $('cTracks').innerHTML = p.tracks.slice(0, 12).map(t => `<li>${esc(t)}</li>`).join('')
     + (p.count > 12 ? `<li style="list-style:none;margin-left:-20px">… and ${p.count - 12} more</li>` : '');
   renderConfirmOpts();
@@ -601,12 +612,15 @@ function stateLine(j) {
   switch (j.status) {
     case 'queued': return ['', 'Waiting…', false];
     case 'running':
-      if (j.step === 'resolving') return ['', vid ? 'Checking the video…' : 'Looking up tracks…', true];
+      if (j.step === 'resolving') return ['', vid ? 'Checking the video…' : (multi ? 'Looking up tracks…' : 'Looking that up…'), true];
       if (j.step === 'finishing') return ['', 'Finishing up…', true];
       if (j.current) return ['', j.total ? `${j.done} of ${j.total} · ${j.current}` : j.current, false];
-      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : `Downloading ${vid ? 'video' : ''}…`.replace(' …', '…'), false];
+      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : (vid ? 'Downloading video…' : 'Downloading…'), false];
     case 'retrying': return ['', 'Retrying the missing ones…', true];
-    case 'done': return ['ok', `Ready · ${multi ? plural(j.files_count, noun) : (vid ? 'video' : '')} · ${mb(j.size_bytes)}`.replace(' ·  ·', ' ·'), false];
+    // every finished card reads the same way: what it is, then how big.
+    // A single file says its format; a batch says how many. Length lives on the artwork.
+    case 'done': return ['ok', ['Ready', multi ? plural(j.files_count, noun) : (j.format || 'mp3').toUpperCase(),
+                                mb(j.size_bytes)].join(' · '), false];
     case 'done_with_errors': return ['warn', `Ready · ${plural(j.files_count, noun)} · ${plural(j.missing.length, noun)} couldn't be found`, false];
     case 'cancelled': return ['', 'Cancelled', false];
     case 'interrupted': return ['bad', 'Interrupted — the server restarted', false];
@@ -620,7 +634,7 @@ function createCard(id) {
   const el = document.createElement('div');
   el.className = 'card job'; el.dataset.id = id;
   el.innerHTML = `
-    <div class="coverwrap"><svg class="i src-glyph"><use href=""/></svg><img class="cover" alt="" loading="lazy" referrerpolicy="no-referrer" hidden>
+    <div class="coverwrap"><div class="backdrop" hidden></div><svg class="i src-glyph"><use href=""/></svg><img class="cover" alt="" loading="lazy" referrerpolicy="no-referrer" hidden>
       <button class="play" data-act="play" data-job="${id}" aria-label="Preview" hidden>${icon('i-play')}</button>
       <span class="dur" hidden></span></div>
     <div class="body">
@@ -643,6 +657,7 @@ function createCard(id) {
   el.querySelector('img.cover').addEventListener('error', e => {
     e.target.hidden = true;
     e.target.removeAttribute('src');          // let the next poll retry it
+    const b = el.querySelector('.backdrop'); if (b) { b.hidden = true; b.style.backgroundImage = ''; }
     const g = el.querySelector('.src-glyph'); if (g) g.style.visibility = '';
   });
   return el;
@@ -667,12 +682,16 @@ function updateCard(el, j) {
 
   // artwork + source glyph
   q('.src-glyph use').setAttribute('href', '#' + srcIcon);
-  const img = q('img.cover');
-  if (j.cover) { if (img.getAttribute('src') !== j.cover) { img.hidden = false; img.src = j.cover; } }
-  else show(img, false);
+  const img = q('img.cover'), back = q('.backdrop');
+  if (j.cover) {
+    if (img.getAttribute('src') !== j.cover) { img.hidden = false; img.src = j.cover; }
+    const bg = `url("${j.cover}")`;
+    if (back.style.backgroundImage !== bg) back.style.backgroundImage = bg;
+    show(back, true);
+  } else { show(img, false); show(back, false); }
   const play = q('.play');
   show(play, ready && !!j.first_file);
-  const dur = q('.dur'), showDur = j.duration && isVideo(j.first_file || '');
+  const dur = q('.dur'), showDur = !!j.duration && j.files_count === 1;
   show(dur, !!showDur);
   if (showDur) { const t = fmtDur(j.duration); if (dur.textContent !== t) dur.textContent = t; }
   play.dataset.file = j.first_file || '';
@@ -693,7 +712,9 @@ function updateCard(el, j) {
   show(q('.state .spin'), spinning);
   const phase = `${j.status}/${j.step || ''}`;
   const phaseChanged = el.dataset.phase !== undefined && el.dataset.phase !== phase;
-  setPhaseText(q('.state .txt'), text, phaseChanged);
+  const txtEl = q('.state .txt');
+  setPhaseText(txtEl, text, phaseChanged);
+  if (txtEl.title !== text) txtEl.title = text;   // the line ellipsises on narrow screens
   el.classList.toggle('working', active);
 
   // progress
@@ -853,7 +874,7 @@ function metaHtml(d) {
   const when = ({ cancelled: 'Cancelled at', error: 'Failed at', interrupted: 'Interrupted at' })[d.status] || 'Completed at';
   return `<dt>Requested</dt><dd>${requested}</dd>
     <dt>Source</dt><dd>${esc(srcLabel)}</dd>
-    <dt>Format</dt><dd>${esc(d.format.toUpperCase())} · ${d.bitrate} kbps${d.numbered ? ' · numbered' : ''}</dd>
+    <dt>Format</dt><dd>${esc(d.format.toUpperCase())}${d.format === 'mp4' ? '' : ` · ${d.bitrate} kbps`}${d.numbered ? ' · numbered' : ''}</dd>
     <dt>Requested at</dt><dd>${new Date(d.created * 1000).toLocaleString()}</dd>
     ${d.finished ? `<dt>${when}</dt><dd>${new Date(d.finished * 1000).toLocaleString()}</dd>` : ''}
     ${d.keep_until ? `<dt>Kept until</dt><dd>${new Date(d.keep_until * 1000).toLocaleString()}</dd>` : ''}`;

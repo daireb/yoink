@@ -121,7 +121,7 @@ COLUMNS = {
     "cover": "TEXT",      # remote artwork URL (fallback when nothing is embedded)
     "current": "TEXT",    # track being downloaded right now
     "lane": "TEXT NOT NULL DEFAULT 'bulk'",
-    "duration": "REAL",     # seconds; set for single-video jobs (the artwork chip)  # quick (one song) or bulk (many) — each lane runs one job at a time
+    "duration": "REAL",     # seconds; set for single-file jobs (the artwork chip)  # quick (one song) or bulk (many) — each lane runs one job at a time
 }
 
 
@@ -158,6 +158,13 @@ def init_db() -> None:
             "UPDATE jobs SET finished=created WHERE finished IS NULL"
             " AND status NOT IN ('queued','running','retrying')"
         )
+        # existing single-file jobs predate the duration column; fill them in so
+        # the artwork chip doesn't look arbitrary for the life of the retention window
+        for r in conn.execute("SELECT id, dir FROM jobs WHERE duration IS NULL"
+                              " AND status IN ('done','done_with_errors')").fetchall():
+            files = list_audio_files(Path(r[1]))
+            if len(files) == 1 and (d := media_duration(files[0])):
+                conn.execute("UPDATE jobs SET duration=? WHERE id=?", (d, r[0]))
 
 
 def job_row(job_id: str) -> Optional[sqlite3.Row]:
@@ -373,7 +380,7 @@ def finalize_job_dir(job_id: str, expected: list[dict], numbered: bool, job_dir:
         m3u = job_dir / "playlist.m3u8"
         m3u.write_text("#EXTM3U\n" + "".join(f"{p.name}\n" for p in ordered), encoding="utf-8")
     final = ordered or files
-    if len(final) == 1 and final[0].suffix.lower() in VIDEO_EXTS:
+    if len(final) == 1:                      # single track or video: length for the artwork chip
         update_job(job_id, duration=media_duration(final[0]))
     return missing
 

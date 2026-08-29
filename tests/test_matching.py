@@ -86,3 +86,23 @@ def test_media_duration_graceful_on_garbage(main, tmp_path):
     p.write_bytes(b"not a real mp4")
     assert main.media_duration(p) is None
     assert main.media_duration(tmp_path / "missing.mp4") is None
+
+
+def test_duration_recorded_for_a_single_audio_file(main, tmp_path, monkeypatch):
+    """The artwork chip shows length for songs too, not just video."""
+    (tmp_path / "Artist - Solo.mp3").write_bytes(b"")
+    seen = {}
+    monkeypatch.setattr(main, "media_duration", lambda p: 214.0)
+    monkeypatch.setattr(main, "update_job", lambda jid, **kw: seen.update(kw))
+    main.finalize_job_dir("j1", [exp(1, "Solo")], numbered=False, job_dir=tmp_path)
+    assert seen.get("duration") == 214.0
+
+
+def test_duration_not_recorded_for_a_batch(main, tmp_path, monkeypatch):
+    for n in ("Artist - A.mp3", "Artist - B.mp3"):
+        (tmp_path / n).write_bytes(b"")
+    seen = {}
+    monkeypatch.setattr(main, "media_duration", lambda p: 100.0)
+    monkeypatch.setattr(main, "update_job", lambda jid, **kw: seen.update(kw))
+    main.finalize_job_dir("j1", [exp(1, "A"), exp(2, "B")], numbered=True, job_dir=tmp_path)
+    assert "duration" not in seen
