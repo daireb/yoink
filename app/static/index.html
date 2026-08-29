@@ -73,11 +73,8 @@
     width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
     border-radius: 12px; padding: 14px 58px 14px 16px; font-size: 16px; outline: none;
   }
-  .under { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; min-height: 32px; }
-  .under .err { margin: 0 4px; flex: 1; min-width: 0; }
-  .importbtn { background: transparent; color: var(--dim); border: 1px solid var(--line); font-weight: 500; font-size: 13px; padding: 7px 12px; display: inline-flex; align-items: center; gap: 7px; }
-  .importbtn:hover { color: var(--text); border-color: var(--dim); filter: none; }
-  .importbtn svg.i { width: 15px; height: 15px; }
+  #subErr { margin: 10px 4px 0; }
+  #subErr:empty { display: none; }
   .field input:focus { border-color: var(--accent); }
   .goRow { position: absolute; right: 7px; top: 7px; bottom: 7px; display: flex; gap: 6px; }
   .field .go {
@@ -314,7 +311,7 @@
 
 <div class="overlay" id="import"><div class="card sheet" style="width:min(460px,100%)">
   <div class="sheet-head"><h2>Import a private playlist</h2><button class="ibtn" onclick="closeImport()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
-  <div class="sub">Spotify doesn't let anyone see private playlists or your Liked Songs, so a link won't work for those. <b>Exportify</b> is a free site that signs into your Spotify and exports any playlist as a CSV file — Yoink reads that file.</div>
+  <div class="sub">Spotify doesn't let anyone see private playlists or your Liked Songs, so a link won't work for those. <b>Exportify</b> is a free site that signs into your Spotify and exports any playlist as a CSV file — Yoink reads that file (or any CSV with a <b>Track URI</b> column). You can also drop a CSV anywhere on this page.</div>
   <ol class="steps">
     <li>Open <a href="https://exportify.net" target="_blank" rel="noopener">exportify.net</a> and log in with Spotify.</li>
     <li>Click <b>Export</b> next to the playlist (or <b>Liked Songs</b>).</li>
@@ -348,7 +345,10 @@
   <header>
     <img src="/static/icon-header.png" alt="">
     <h1>Yoink</h1>
+    <span style="display:inline-flex; gap:2px">
+    <button class="ibtn" onclick="openImport()" aria-label="Import private playlist" title="Import private playlist"><svg class="i"><use href="#i-file"/></svg></button>
     <button class="ibtn" onclick="openOptions()" aria-label="Options" title="Options"><svg class="i"><use href="#i-gear"/></svg></button>
+    </span>
   </header>
 
   <div class="field">
@@ -359,7 +359,7 @@
       <button class="go" id="goBtn" onclick="submit()" aria-label="Request"><svg class="i"><use href="#i-arrow"/></svg></button>
     </div>
   </div>
-  <div class="under"><div class="err" id="subErr"></div><button class="importbtn" onclick="openImport()"><svg class="i"><use href="#i-file"/></svg>Import private playlist</button></div>
+  <div class="err" id="subErr"></div>
   <input type="file" id="csvfile" accept=".csv,text/csv" style="display:none">
 
   <button class="notice" id="notice" type="button" onclick="openUpdate()" hidden></button>
