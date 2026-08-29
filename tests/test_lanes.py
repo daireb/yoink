@@ -37,3 +37,11 @@ def test_video_mode_only_for_media(main):
     assert "--extract-audio" not in cmd and "--audio-quality" not in cmd
     audio = main.ytdlp_download_cmd("https://youtube.com/watch?v=x", "mp3", 192, __import__("pathlib").Path("/tmp"), False)
     assert "--extract-audio" in audio and "192K" in audio and "-t" not in audio
+
+
+def test_ytdlp_commands_carry_the_progress_template(main):
+    import pathlib
+    for fmt in ("mp3", "mp4"):
+        cmd = main.ytdlp_download_cmd("https://youtube.com/watch?v=x", fmt, 320, pathlib.Path("/tmp"), False)
+        i = cmd.index("--progress-template")
+        assert cmd[i + 1].startswith("download:yoink-prog")

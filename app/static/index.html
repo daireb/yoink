@@ -162,6 +162,9 @@
          background: rgba(124,140,255,.13); overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--accent); position: relative; overflow: hidden;
            transition: width .6s cubic-bezier(.2,.7,.2,1), background-color .45s ease; }
+  /* byte-level progress arrives every poll; a linear glide of about one poll
+     interval turns the steps into continuous motion */
+  .bar.live i { transition: width 1.9s linear, background-color .45s ease; }
   .bar.indet i { width: 30% !important; animation: slide 1.2s ease-in-out infinite alternate; }
   /* a slow sheen — if it stops travelling, the job has stalled */
   .bar i::after { content: ""; position: absolute; inset: 0;
@@ -614,8 +617,9 @@ function stateLine(j) {
     case 'running':
       if (j.step === 'resolving') return ['', vid ? 'Checking the video…' : (multi ? 'Looking up tracks…' : 'Looking that up…'), true];
       if (j.step === 'finishing') return ['', 'Finishing up…', true];
-      if (j.current) return ['', j.total ? `${j.done} of ${j.total} · ${j.current}` : j.current, false];
-      return ['', j.total ? `Downloading · ${j.done} of ${j.total}` : (vid ? 'Downloading video…' : 'Downloading…'), false];
+      // `current` names the track within a batch; for a single it just repeats the title
+      if (j.current && (j.total || 0) > 1) return ['', `${j.done} of ${j.total} · ${j.current}`, false];
+      return ['', (j.total || 0) > 1 ? `Downloading · ${j.done} of ${j.total}` : (vid ? 'Downloading video…' : 'Downloading…'), false];
     case 'retrying': return ['', 'Retrying the missing ones…', true];
     // every finished card reads the same way: what it is, then how big.
     // A single file says its format; a batch says how many. Length lives on the artwork.
@@ -721,7 +725,7 @@ function updateCard(el, j) {
   const bar = q('.bar'); const downloading = j.status === 'running' && j.step === 'downloading';
   // completion flourish: a running job turning Ready fills, greens, holds, fades
   if (ready && ['running', 'retrying'].includes(el.dataset.status) && !bar.hidden) {
-    bar.classList.remove('indet');
+    bar.classList.remove('indet', 'live');
     bar.firstElementChild.style.width = '100%';
     bar.classList.add('finishing');
     el.dataset.flourish = '1';
@@ -733,9 +737,13 @@ function updateCard(el, j) {
     show(bar, downloading);
   }
   if (downloading) {
-    const pct = j.total ? Math.min(100, Math.round(100 * j.done / j.total)) : null;
+    const frac = j.progress != null ? j.progress : (j.total ? j.done / j.total : null);
+    const pct = frac != null ? Math.min(100, frac * 100) : null;
     bar.classList.toggle('indet', pct === null);
-    const w = (pct ?? 30) + '%'; if (bar.firstElementChild.style.width !== w) bar.firstElementChild.style.width = w;
+    bar.classList.toggle('live', j.progress != null);
+    const w = (pct ?? 30).toFixed(1) + '%'; if (bar.firstElementChild.style.width !== w) bar.firstElementChild.style.width = w;
+  } else {
+    bar.classList.remove('live');
   }
 
   // missing tracks

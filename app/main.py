@@ -121,7 +121,8 @@ COLUMNS = {
     "cover": "TEXT",      # remote artwork URL (fallback when nothing is embedded)
     "current": "TEXT",    # track being downloaded right now
     "lane": "TEXT NOT NULL DEFAULT 'bulk'",
-    "duration": "REAL",     # seconds; set for single-file jobs (the artwork chip)  # quick (one song) or bulk (many) — each lane runs one job at a time
+    "duration": "REAL",     # seconds; set for single-file jobs (the artwork chip)
+    "progress": "REAL",     # 0..1 within the downloading step (byte-level for yt-dlp)  # quick (one song) or bulk (many) — each lane runs one job at a time
 }
 
 
@@ -457,12 +458,14 @@ def ytdlp_download_cmd(url: str, fmt: str, bitrate: int, job_dir: Path, is_playl
         cmd = ["yt-dlp", "-t", "mp4",
                "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
                "--newline", "--no-colors", "--no-overwrites",
+               "--progress-template", YTDLP_PROG_TEMPLATE,
                "-o", str(job_dir / tmpl)]
     else:
         cmd = ["yt-dlp", "--extract-audio", "--audio-format", fmt,
                "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
                "--parse-metadata", "%(artist,uploader|)s:%(meta_artist)s",
                "--newline", "--no-colors", "--no-overwrites",
+               "--progress-template", YTDLP_PROG_TEMPLATE,
                "-o", str(job_dir / tmpl)]
         if fmt == "mp3":
             cmd += ["--audio-quality", f"{bitrate}K"]
@@ -479,24 +482,39 @@ YTDLP_DEST_RE = re.compile(r"\[download\] Destination: (.+)")
 YTDLP_ITEM_RE = re.compile(r"\[download\] Downloading item (\d+) of (\d+)")
 YTDLP_DONE_RE = re.compile(r"\[ExtractAudio\] Destination:")
 YTDLP_FINISHED_RE = re.compile(r"\[download\] 100% of .+ in |has already been downloaded")
+# our own progress line (see YTDLP_PROG_TEMPLATE): stream-level percent
+YTDLP_PROG_RE = re.compile(r"^yoink-prog\s+([\d.]+)%")
+YTDLP_PROG_TEMPLATE = "download:yoink-prog %(progress._percent_str)s"
 
 
 def parse_progress(kind: str, line: str, state: dict) -> None:
     if kind == "media":
         if m := YTDLP_ITEM_RE.search(line):
             state["total"] = int(m.group(2))
+            if state.get("item") != int(m.group(1)):     # next item: its streams start at 0 again
+                state["item"] = int(m.group(1))
+                state["stream_pct"] = 0.0
         if YTDLP_DONE_RE.search(line):
             state["extracted"] = state.get("extracted", 0) + 1
         if YTDLP_FINISHED_RE.search(line):
-            state["finished"] = state.get("finished", 0) + 1
+            # fires once per STREAM (an mp4 is video+audio), so it can't count
+            # items — but it does mean the current stream is fully fetched
+            state["stream_pct"] = 100.0
+        if m := YTDLP_PROG_RE.match(line):
+            # a video downloads as several streams, each running 0..100; clamping
+            # monotonic per item keeps the bar from snapping back between streams
+            state["stream_pct"] = max(state.get("stream_pct", 0.0), float(m.group(1)))
         if m := YTDLP_DEST_RE.search(line):
             # strip yt-dlp's stream-id suffix (Title.f137) before showing it
             state["current"] = re.sub(r"\.f\d+$", "", Path(m.group(1)).stem)
-        state["done"] = max(state.get("extracted", 0), state.get("finished", 0))
+        state["done"] = max(state.get("extracted", 0), state.get("item", 1) - 1)
+        total = state.get("total") or 1
+        state["progress"] = min(1.0, (state["done"] + min(state.get("stream_pct", 0.0), 100.0) / 100) / total)
     else:
         if m := SPOTDL_COMPLETE_RE.match(line):
             state["done"] = int(m.group(1))
             state["total"] = max(int(m.group(2)), state.get("total") or 0)
+            state["progress"] = min(1.0, state["done"] / state["total"]) if state["total"] else None
         if m := SPOTDL_STAGE_RE.match(line):
             if m.group("stage") == "Downloading":
                 state["current"] = m.group("song")
@@ -578,7 +596,7 @@ def run_job(row: sqlite3.Row) -> None:
 
     def progress():
         update_job(job_id, done=state.get("done", 0), total=state.get("total"),
-                   current=state.get("current"))
+                   current=state.get("current"), progress=state.get("progress"))
 
     try:
         with open(log_path, "a", encoding="utf-8") as log:
@@ -1069,7 +1087,7 @@ async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
 
 def public_job(r: sqlite3.Row, with_files: bool = False) -> dict:
     d = {k: r[k] for k in ("id", "created", "finished", "kind", "title", "format", "bitrate",
-                           "numbered", "status", "step", "total", "done", "error", "current", "lane", "duration")}
+                           "numbered", "status", "step", "total", "done", "error", "current", "lane", "duration", "progress")}
     # the original link/query, so the UI can offer "Try again" (not for CSV jobs: that's a URL list)
     d["input"] = r["input"] if r["kind"] in ("spotify", "media", "search") else None
     job_dir = Path(r["dir"])

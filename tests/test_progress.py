@@ -40,9 +40,45 @@ def test_ytdlp_sequence(main):
     assert state["current"] == "Second Song"
 
 
-def test_ytdlp_already_downloaded_counts(main):
+def test_ytdlp_already_downloaded_fills_the_stream(main):
     state = feed(main, "media", ["[download] Big Buck Bunny.webm has already been downloaded"])
+    assert state["progress"] == 1.0
+
+
+def test_ytdlp_byte_progress_single_video(main):
+    state = feed(main, "media", ["yoink-prog  10.0%", "yoink-prog  52.4%"], {"done": 0, "total": 1})
+    assert state["progress"] == 0.524
+
+
+def test_ytdlp_two_streams_never_move_backwards(main):
+    state = feed(main, "media", ["yoink-prog  97.0%",
+                                 "[download] 100% of  180.00MiB in 00:01:00 at 3MiB/s",
+                                 "yoink-prog   3.0%"], {"done": 0, "total": 1})
+    assert state["progress"] == 1.0  # audio stream's restart can't drag the bar back
+
+
+def test_ytdlp_playlist_progress_folds_items_and_stream(main):
+    lines = ["[download] Downloading item 1 of 8", "yoink-prog  80.0%",
+             "[download] Downloading item 2 of 8", "yoink-prog  10.0%"]
+    state = feed(main, "media", lines)
     assert state["done"] == 1
+    assert abs(state["progress"] - (1 + 0.10) / 8) < 1e-9
+
+
+def test_ytdlp_mp4_playlist_does_not_overcount_done(main):
+    # each mp4 item completes TWO streams; done must come from item transitions
+    lines = []
+    for i in (1, 2):
+        lines += [f"[download] Downloading item {i} of 2",
+                  "[download] 100% of  10MiB in 00:00:02 at 5MiB/s",
+                  "[download] 100% of   1MiB in 00:00:01 at 1MiB/s"]
+    state = feed(main, "media", lines)
+    assert state["done"] == 1 and state["total"] == 2
+
+
+def test_spotdl_sets_progress_fraction(main):
+    state = feed(main, "spotify", ["3/10 complete"])
+    assert state["progress"] == 0.3
 
 
 def test_ytdlp_stream_suffix_stripped_from_current(main):
