@@ -106,3 +106,10 @@ def test_duration_not_recorded_for_a_batch(main, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "update_job", lambda jid, **kw: seen.update(kw))
     main.finalize_job_dir("j1", [exp(1, "A"), exp(2, "B")], numbered=True, job_dir=tmp_path)
     assert "duration" not in seen
+
+
+def test_single_track_never_numbered_even_when_enabled(main, tmp_path):
+    touch(tmp_path, "Artist - Solo.mp3")
+    main.finalize_job_dir("j1", [exp(1, "Solo")], numbered=True, job_dir=tmp_path)
+    assert (tmp_path / "Artist - Solo.mp3").exists()
+    assert not list(tmp_path.glob("01 -*"))

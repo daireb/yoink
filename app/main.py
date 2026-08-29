@@ -361,6 +361,7 @@ def media_duration(path: Path) -> Optional[float]:
 
 def finalize_job_dir(job_id: str, expected: list[dict], numbered: bool, job_dir: Path) -> list[dict]:
     """Match, number, write m3u. Returns the missing list."""
+    numbered = numbered and len(expected) > 1   # numbering orders a playlist; a lone track has no order
     files = list_audio_files(job_dir)
     matched, missing = match_files(expected, files) if expected else ({}, [])
     width = 3 if len(expected) >= 100 else 2
