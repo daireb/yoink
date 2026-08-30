@@ -130,11 +130,41 @@ def cookie_args(flag: str) -> list[str]:
     return []
 
 
+_cookie_domains_cache: tuple = (None, "")
+
+
+def cookie_domains() -> str:
+    """Short human summary of which sites the cookie file covers — surfaces an
+    accidental export-all at the moment it can still be fixed."""
+    global _cookie_domains_cache
+    try:
+        mtime = COOKIES_PATH.stat().st_mtime
+    except OSError:
+        return ""
+    if _cookie_domains_cache[0] == mtime:
+        return _cookie_domains_cache[1]
+    sites: set[str] = set()
+    try:
+        for line in COOKIES_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("#") or line.count("\t") < 6:
+                continue
+            host = line.split("\t", 1)[0].lstrip(".").lower()
+            parts = host.split(".")
+            # registrable domain, naively: last two labels (three for co.uk-style)
+            n = 3 if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac", "gov") and len(parts[-1]) == 2 else 2
+            sites.add(".".join(parts[-n:]))
+    except OSError:
+        return ""
+    text = ", ".join(sorted(sites)) if len(sites) <= 3 else f"{len(sites)} sites"
+    _cookie_domains_cache = (mtime, text)
+    return text
+
+
 def cookie_status() -> dict:
     try:
-        return {"present": True, "since": COOKIES_PATH.stat().st_mtime}
+        return {"present": True, "since": COOKIES_PATH.stat().st_mtime, "sites": cookie_domains()}
     except OSError:
-        return {"present": False, "since": None}
+        return {"present": False, "since": None, "sites": ""}
 
 # ------------------------------------------------------------------------- db
 

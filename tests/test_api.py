@@ -65,3 +65,16 @@ def test_cookies_upload_validate_delete(logged_in, main):
     r = logged_in.delete("/api/cookies")
     assert r.status_code == 200 and r.json()["present"] is False
     assert not main.COOKIES_PATH.is_file()
+
+
+def test_cookie_status_reports_sites(logged_in, main):
+    one = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tx\naccounts.youtube.com\tTRUE\t/\tTRUE\t0\tA\ty\n"
+    r = logged_in.post("/api/cookies", files={"file": ("c.txt", one.encode())})
+    assert r.json()["sites"] == "youtube.com"
+    many = "".join(f".site{i}.com\tTRUE\t/\tTRUE\t0\tK\tv\n" for i in range(5))
+    r = logged_in.post("/api/cookies", files={"file": ("c.txt", many.encode())})
+    assert r.json()["sites"] == "5 sites"
+    bbc = ".bbc.co.uk\tTRUE\t/\tTRUE\t0\tK\tv\n"
+    r = logged_in.post("/api/cookies", files={"file": ("c.txt", bbc.encode())})
+    assert r.json()["sites"] == "bbc.co.uk"
+    logged_in.delete("/api/cookies")

@@ -313,12 +313,12 @@
       </select></div>
     <div class="optgroup">Cookies</div>
     <div class="opt">
-      <div class="help" style="margin:0 0 8px">Lets downloads use your YouTube login.
+      <div class="help" style="margin:0 0 8px">Lets downloads use your site logins.
         <button class="linkish" onclick="$('cookieHelp').hidden = !$('cookieHelp').hidden">details</button></div>
-      <div class="help" id="cookieHelp" style="margin:0 0 8px" hidden>Helps with age-restricted videos
-        and “are you a bot?” checks. The file is your signed-in session: it is stored on this Yoink
-        and used for <b>every</b> request placed here. Export one with a “Get cookies.txt”
-        browser extension.</div>
+      <div class="help" id="cookieHelp" style="margin:0 0 8px" hidden>Works for age-restricted YouTube
+        and any site that wants you signed in. The file holds your login sessions: it stays on this
+        Yoink and applies to every request placed here. Export with a “Get cookies.txt” browser
+        extension — one site at a time, not “export all”.</div>
       <div class="cookierow">
         <span id="cookieState" class="help" style="margin:0"></span>
         <button class="ghost" id="cookieUp" onclick="$('cookiefile').click()">Upload</button>
@@ -504,7 +504,7 @@ async function submit(mode) {
 function fmtSince(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
 function paintCookies() {
   const c = SETTINGS.cookies || { present: false };
-  $('cookieState').textContent = c.present ? `Uploaded ${fmtSince(c.since)}` : 'No cookie file';
+  $('cookieState').textContent = c.present ? `Uploaded ${fmtSince(c.since)}${c.sites ? ' · ' + c.sites : ''}` : 'No cookie file';
   $('cookieDel').hidden = !c.present;
   $('useCookies').disabled = !c.present;
 }
