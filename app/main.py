@@ -97,6 +97,45 @@ def _load_secret() -> str:
 
 SECRET = _load_secret()
 
+SETTINGS_PATH = DATA_DIR / "settings.json"
+COOKIES_PATH = DATA_DIR / "cookies.txt"
+SETTINGS_DEFAULTS = {"format": "mp3", "bitrate": 320, "numbered": True, "vres": "best", "use_cookies": True}
+SETTINGS_LOCK = threading.Lock()
+
+
+def load_settings() -> dict:
+    try:
+        saved = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    return {**SETTINGS_DEFAULTS, **{k: saved[k] for k in SETTINGS_DEFAULTS if k in saved}}
+
+
+SETTINGS = load_settings()
+
+
+def save_settings(new: dict) -> dict:
+    with SETTINGS_LOCK:
+        SETTINGS.update(new)
+        tmp = SETTINGS_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(SETTINGS), encoding="utf-8")
+        tmp.replace(SETTINGS_PATH)
+    return dict(SETTINGS)
+
+
+def cookie_args(flag: str) -> list[str]:
+    """[--cookies|--cookie-file, path] when a cookie file exists and is enabled."""
+    if SETTINGS.get("use_cookies") and COOKIES_PATH.is_file():
+        return [flag, str(COOKIES_PATH)]
+    return []
+
+
+def cookie_status() -> dict:
+    try:
+        return {"present": True, "since": COOKIES_PATH.stat().st_mtime}
+    except OSError:
+        return {"present": False, "since": None}
+
 # ------------------------------------------------------------------------- db
 
 COLUMNS = {
@@ -442,7 +481,7 @@ def cached_cover(job_id: str, job_dir: Path) -> Optional[Path]:
 # ------------------------------------------------------------- command builder
 
 def spotdl_download_cmd(spotdl_file: Path, fmt: str, bitrate: int, job_dir: Path) -> list[str]:
-    cmd = ["spotdl", "download", str(spotdl_file),
+    cmd = ["spotdl", "download", str(spotdl_file), *cookie_args("--cookie-file"),
            "--format", fmt, "--threads", SPOTDL_THREADS,
            "--output", str(job_dir / "{artists} - {title}.{output-ext}"),
            *SPOTDL_FLAGS, "--print-errors"]
@@ -458,14 +497,14 @@ def ytdlp_download_cmd(url: str, fmt: str, bitrate: int, job_dir: Path, is_playl
     if fmt == "mp4":
         # Video mode: yt-dlp's mp4 preset (H.264/AAC in mp4, remuxed not
         # re-encoded where possible) — plays everywhere; bitrate is ignored.
-        cmd = ["yt-dlp", "-t", "mp4",
+        cmd = ["yt-dlp", "-t", "mp4", *cookie_args("--cookies"),
                *(["-S", f"res:{vres},vcodec:h264,acodec:aac"] if vres else []),
                "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
                "--newline", "--no-colors", "--no-overwrites",
                "--progress-template", YTDLP_PROG_TEMPLATE,
                "-o", str(job_dir / tmpl)]
     else:
-        cmd = ["yt-dlp", "--extract-audio", "--audio-format", fmt,
+        cmd = ["yt-dlp", *cookie_args("--cookies"), "--extract-audio", "--audio-format", fmt,
                "--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg",
                "--parse-metadata", "%(artist,uploader|)s:%(meta_artist)s",
                "--newline", "--no-colors", "--no-overwrites",
@@ -716,7 +755,8 @@ class _Stop(Exception):
 def probe_media(url: str, timeout: float = 120) -> dict:
     """yt-dlp metadata probe: title + entries, no download."""
     is_playlist = "list=" in url or "/playlist" in url
-    cmd = ["yt-dlp", "-J", "--no-warnings", "--flat-playlist" if is_playlist else "--no-playlist", url]
+    cmd = ["yt-dlp", *cookie_args("--cookies"), "-J", "--no-warnings",
+           "--flat-playlist" if is_playlist else "--no-playlist", url]
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if out.returncode != 0 or not out.stdout.strip():
         raise RuntimeError("couldn't read that link")
@@ -907,11 +947,11 @@ def detect_kind(text: str) -> str:
 
 
 def parse_options(body: dict) -> tuple[str, int, Optional[bool]]:
-    fmt = str(body.get("format", "mp3"))
+    fmt = str(body.get("format", SETTINGS["format"]))
     if fmt not in FORMATS:
         raise HTTPException(400, "bad format")
     try:
-        bitrate = int(body.get("bitrate", 320))
+        bitrate = int(body.get("bitrate", SETTINGS["bitrate"]))
     except (TypeError, ValueError):
         raise HTTPException(400, "bad bitrate")
     if bitrate not in BITRATES:
@@ -1081,6 +1121,53 @@ def parse_csv(raw: bytes) -> tuple[list[str], list[dict]]:
     return urls, tracks
 
 
+@app.put("/api/settings")
+async def put_settings(request: Request):
+    body = await request.json()
+    fmt = str(body.get("format", SETTINGS["format"]))
+    if fmt not in FORMATS or fmt == "mp4":       # the saved audio default can't be a video format
+        raise HTTPException(400, "bad format")
+    try:
+        bitrate = int(body.get("bitrate", SETTINGS["bitrate"]))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "bad bitrate")
+    if bitrate not in BITRATES:
+        raise HTTPException(400, "bad bitrate")
+    v = str(body.get("vres", SETTINGS["vres"]))
+    if v not in ("best", "1080", "720"):
+        raise HTTPException(400, "bad video quality")
+    new = {"format": fmt, "bitrate": bitrate, "vres": v,
+           "numbered": bool(body.get("numbered", SETTINGS["numbered"])),
+           "use_cookies": bool(body.get("use_cookies", SETTINGS["use_cookies"]))}
+    return {**save_settings(new), "cookies": cookie_status()}
+
+
+MAX_COOKIES_BYTES = 256 * 1024
+
+
+@app.post("/api/cookies")
+async def put_cookies(file: UploadFile):
+    raw = await file.read(MAX_COOKIES_BYTES + 1)
+    if len(raw) > MAX_COOKIES_BYTES:
+        raise HTTPException(413, "that file is too large to be a cookies export")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "that doesn't look like a cookies.txt export")
+    # Netscape format: comment lines plus tab-separated records (7 fields)
+    if not any(line.count("\t") >= 6 for line in text.splitlines()):
+        raise HTTPException(400, "that doesn't look like a cookies.txt export — use a 'Get cookies.txt' browser extension")
+    COOKIES_PATH.write_text(text, encoding="utf-8")
+    COOKIES_PATH.chmod(0o600)
+    return cookie_status()
+
+
+@app.delete("/api/cookies")
+def delete_cookies():
+    COOKIES_PATH.unlink(missing_ok=True)
+    return cookie_status()
+
+
 @app.post("/api/jobs/csv")
 async def submit_csv(file: UploadFile, format: str = "mp3", bitrate: int = 320,
                      numbered: Optional[int] = None, dry_run: int = 0):
@@ -1129,7 +1216,8 @@ def jobs():
             "SELECT * FROM jobs WHERE parent_id IS NULL ORDER BY created DESC LIMIT 200").fetchall()
     return {"jobs": [public_job(r) for r in rows], "auth_required": bool(PASSWORD),
             "keep_days": KEEP_DAYS, "disk_used": disk_used(), "versions": TOOL_VERSIONS,
-            "update": update_status()}
+            "update": update_status(),
+            "settings": {**SETTINGS, "cookies": cookie_status()}}
 
 
 @app.get("/api/jobs/{job_id}")

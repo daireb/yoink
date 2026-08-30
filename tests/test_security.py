@@ -30,3 +30,16 @@ def test_authed_open_mode(main, monkeypatch):
         cookies = {}
 
     assert main.authed(Req()) is True
+
+
+def test_cookie_args_respects_toggle_and_presence(main, monkeypatch):
+    main.COOKIES_PATH.write_text("x\t" * 6 + "\n")
+    try:
+        monkeypatch.setitem(main.SETTINGS, "use_cookies", True)
+        assert main.cookie_args("--cookies") == ["--cookies", str(main.COOKIES_PATH)]
+        monkeypatch.setitem(main.SETTINGS, "use_cookies", False)   # anonymous mode
+        assert main.cookie_args("--cookies") == []
+    finally:
+        main.COOKIES_PATH.unlink()
+    monkeypatch.setitem(main.SETTINGS, "use_cookies", True)
+    assert main.cookie_args("--cookies") == []                     # no file, no flag

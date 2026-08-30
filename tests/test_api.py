@@ -40,3 +40,28 @@ def test_video_rejected_for_spotify_and_csv(logged_in):
     assert r.status_code == 400 and "video" in r.json()["detail"]
     r = logged_in.post("/api/jobs/csv?format=mp4", files={"file": ("x.csv", b"Track URI\nspotify:track:AAA1\n")})
     assert r.status_code == 400
+
+
+def test_settings_roundtrip_and_validation(logged_in):
+    r = logged_in.put("/api/settings", json={"format": "opus", "bitrate": 192, "vres": "720",
+                                             "numbered": False, "use_cookies": False})
+    assert r.status_code == 200
+    s = logged_in.get("/api/jobs").json()["settings"]
+    assert (s["format"], s["bitrate"], s["vres"], s["numbered"], s["use_cookies"]) == ("opus", 192, "720", False, False)
+    assert logged_in.put("/api/settings", json={"format": "mp4"}).status_code == 400   # saved default can't be video
+    assert logged_in.put("/api/settings", json={"bitrate": 999}).status_code == 400
+    assert logged_in.put("/api/settings", json={"vres": "4k"}).status_code == 400
+    logged_in.put("/api/settings", json={"format": "mp3", "bitrate": 320, "vres": "best",
+                                         "numbered": True, "use_cookies": True})
+
+
+def test_cookies_upload_validate_delete(logged_in, main):
+    good = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tabc123\n"
+    r = logged_in.post("/api/cookies", files={"file": ("cookies.txt", good.encode())})
+    assert r.status_code == 200 and r.json()["present"] is True
+    assert main.COOKIES_PATH.is_file() and (main.COOKIES_PATH.stat().st_mode & 0o777) == 0o600
+    r = logged_in.post("/api/cookies", files={"file": ("x.txt", b"just some words, no tabs")})
+    assert r.status_code == 400
+    r = logged_in.delete("/api/cookies")
+    assert r.status_code == 200 and r.json()["present"] is False
+    assert not main.COOKIES_PATH.is_file()

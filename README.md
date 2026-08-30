@@ -88,8 +88,12 @@ Everything is optional. Set values in `.env` next to the compose file
 | `YOINK_PREFLIGHT_TIMEOUT` | `80` | seconds a link lookup may take (keep under your proxy's origin timeout) |
 | `YOINK_SECRET` | auto-generated | cookie-signing secret override |
 
-Per-request defaults — 320/192/128 kbps, MP3/M4A/Opus/FLAC, track numbering —
-live behind the gear icon in the UI, saved per browser.
+Defaults — audio format and quality, video quality cap, track numbering —
+live behind the gear icon and are saved on the instance, so every device
+sees the same settings. The same sheet holds an optional **cookies.txt**
+upload: it lets downloads use your YouTube login (age-restricted videos,
+bot checks, Premium audio quality), applies to every request placed on the
+instance, and has a toggle to go anonymous without deleting the file.
 
 ## 🌍 Remote access
 
