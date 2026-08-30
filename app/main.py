@@ -525,6 +525,8 @@ YTDLP_DEST_RE = re.compile(r"\[download\] Destination: (.+)")
 YTDLP_ITEM_RE = re.compile(r"\[download\] Downloading item (\d+) of (\d+)")
 YTDLP_DONE_RE = re.compile(r"\[ExtractAudio\] Destination:")
 YTDLP_FINISHED_RE = re.compile(r"\[download\] 100% of .+ in |has already been downloaded")
+# post-download work inside yt-dlp: merging streams, transcoding, embedding
+YTDLP_POSTPROC_RE = re.compile(r"^\[(Merger|Metadata|EmbedThumbnail|ExtractAudio|VideoRemuxer|ThumbnailsConvertor)\]")
 # our own progress line (see YTDLP_PROG_TEMPLATE): stream-level percent
 YTDLP_PROG_RE = re.compile(r"^yoink-prog\s+([\d.]+)%")
 YTDLP_PROG_TEMPLATE = "download:yoink-prog %(progress._percent_str)s"
@@ -534,6 +536,7 @@ def parse_progress(kind: str, line: str, state: dict) -> None:
     if kind == "media":
         if m := YTDLP_ITEM_RE.search(line):
             state["total"] = int(m.group(2))
+            state["processing"] = False
             if state.get("item") != int(m.group(1)):     # next item: its streams start at 0 again
                 state["item"] = int(m.group(1))
                 state["stream_pct"] = 0.0
@@ -547,6 +550,11 @@ def parse_progress(kind: str, line: str, state: dict) -> None:
             # a video downloads as several streams, each running 0..100; clamping
             # monotonic per item keeps the bar from snapping back between streams
             state["stream_pct"] = max(state.get("stream_pct", 0.0), float(m.group(1)))
+            state["processing"] = False
+        if YTDLP_POSTPROC_RE.match(line):
+            # bytes are all here; ffmpeg is now merging/converting/embedding —
+            # for a big file that is full passes over it, and it is not a download
+            state["processing"] = True
         if m := YTDLP_DEST_RE.search(line):
             # strip yt-dlp's stream-id suffix (Title.f137) before showing it
             state["current"] = re.sub(r"\.f\d+$", "", Path(m.group(1)).stem)
@@ -638,8 +646,11 @@ def run_job(row: sqlite3.Row) -> None:
         return
 
     def progress():
-        update_job(job_id, done=state.get("done", 0), total=state.get("total"),
-                   current=state.get("current"), progress=state.get("progress"))
+        fields = dict(done=state.get("done", 0), total=state.get("total"),
+                      current=state.get("current"), progress=state.get("progress"))
+        if "processing" in state:      # only the media download step ever sets this
+            fields["step"] = "processing" if state["processing"] else "downloading"
+        update_job(job_id, **fields)
 
     try:
         with open(log_path, "a", encoding="utf-8") as log:

@@ -313,10 +313,12 @@
       </select></div>
     <div class="optgroup">Cookies</div>
     <div class="opt">
-      <div class="help" style="margin:0 0 8px">A cookies.txt export lets downloads use your YouTube
-        login — for age-restricted videos, or if YouTube starts asking “are you a bot?”.
-        It is your signed-in session: it is stored on this Yoink and used for <b>every</b> request
-        placed here. Export with a “Get cookies.txt” browser extension.</div>
+      <div class="help" style="margin:0 0 8px">Lets downloads use your YouTube login.
+        <button class="linkish" onclick="$('cookieHelp').hidden = !$('cookieHelp').hidden">details</button></div>
+      <div class="help" id="cookieHelp" style="margin:0 0 8px" hidden>Helps with age-restricted videos
+        and “are you a bot?” checks. The file is your signed-in session: it is stored on this Yoink
+        and used for <b>every</b> request placed here. Export one with a “Get cookies.txt”
+        browser extension.</div>
       <div class="cookierow">
         <span id="cookieState" class="help" style="margin:0"></span>
         <button class="ghost" id="cookieUp" onclick="$('cookiefile').click()">Upload</button>
@@ -677,6 +679,8 @@ function stateLine(j) {
     case 'running':
       if (j.step === 'resolving') return ['', vid ? 'Checking the video…' : (multi ? 'Looking up tracks…' : 'Looking that up…'), true];
       if (j.step === 'finishing') return ['', 'Finishing up…', true];
+      // the bytes are all here; ffmpeg is merging/converting/embedding
+      if (j.step === 'processing') return ['', (j.total || 0) > 1 ? `${j.done} of ${j.total} · Processing…` : 'Processing…', true];
       // `current` names the track within a batch; for a single it just repeats the title
       if (j.current && (j.total || 0) > 1) return ['', `${j.done} of ${j.total} · ${j.current}`, false];
       return ['', (j.total || 0) > 1 ? `Downloading · ${j.done} of ${j.total}` : (vid ? 'Downloading video…' : 'Downloading…'), false];
@@ -782,7 +786,7 @@ function updateCard(el, j) {
   el.classList.toggle('working', active);
 
   // progress
-  const bar = q('.bar'); const downloading = j.status === 'running' && j.step === 'downloading';
+  const bar = q('.bar'); const downloading = j.status === 'running' && (j.step === 'downloading' || j.step === 'processing');
   // completion flourish: a running job turning Ready fills, greens, holds, fades
   if (ready && ['running', 'retrying'].includes(el.dataset.status) && !bar.hidden) {
     bar.classList.remove('indet', 'live');

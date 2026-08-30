@@ -84,3 +84,17 @@ def test_spotdl_sets_progress_fraction(main):
 def test_ytdlp_stream_suffix_stripped_from_current(main):
     state = feed(main, "media", ["[download] Destination: /d/x/Sintel - Open Movie.f137.mp4"])
     assert state["current"] == "Sintel - Open Movie"
+
+
+def test_postprocessing_phase_detected_and_cleared(main):
+    state = feed(main, "media", ["yoink-prog  99.0%",
+                                 "[Merger] Merging formats into \"/downloads/x/Big.mp4\""],
+                 {"done": 0, "total": 1})
+    assert state["processing"] is True and state["progress"] == 1.0 or state["progress"] == 0.99
+    feed(main, "media", ["[download] Downloading item 2 of 8"], state)
+    assert state["processing"] is False
+
+
+def test_audio_transcode_counts_as_processing(main):
+    state = feed(main, "media", ["[ExtractAudio] Destination: /d/x/Long Video.mp3"], {"done": 0, "total": 1})
+    assert state["processing"] is True
